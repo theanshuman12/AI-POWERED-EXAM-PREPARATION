@@ -27,6 +27,9 @@ export const AuthPages: React.FC<AuthPagesProps> = ({
   const [password, setPassword] = useState<string>('');
   const [requestAdminAccess, setRequestAdminAccess] = useState<boolean>(false);
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
+  const [showReset, setShowReset] = useState<boolean>(false);
+  const [resetToken, setResetToken] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -38,17 +41,42 @@ export const AuthPages: React.FC<AuthPagesProps> = ({
       if (mode === 'login') {
         await login(email, password);
       } else {
-        await register(name, email, password);
-        if (requestAdminAccess) {
-          await api.submitAdminRequest();
-          setRequestStatus('Your Admin request has been submitted and is awaiting approval from the Super Admin.');
-        }
+        const registration = await register(name, email, password, requestAdminAccess);
+        setRequestStatus(registration.message);
+        setName('');
+        setEmail('');
+        setPassword('');
+        return;
       }
       onSuccess();
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please check credentials.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePasswordResetRequest = async () => {
+    setError(null);
+    try {
+      const response = await api.requestPasswordReset(email);
+      setRequestStatus(response.message);
+      setShowReset(false);
+    } catch (err: any) {
+      setError(err.message || 'Unable to submit password reset request.');
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    setError(null);
+    try {
+      const response = await api.completePasswordReset(resetToken, newPassword);
+      setRequestStatus(response.message);
+      setShowReset(false);
+      setResetToken('');
+      setNewPassword('');
+    } catch (err: any) {
+      setError(err.message || 'Unable to complete password reset.');
     }
   };
 
@@ -135,6 +163,21 @@ export const AuthPages: React.FC<AuthPagesProps> = ({
           )}
 
           {requestStatus && <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-3">{requestStatus}</p>}
+
+          {mode === 'login' && !showReset && (
+            <button type="button" onClick={() => setShowReset(true)} className="text-blue-600 font-bold hover:underline">Forgot Password?</button>
+          )}
+
+          {mode === 'login' && showReset && (
+            <div className="space-y-2 rounded-xl bg-slate-50 border border-slate-200 p-3">
+              <p className="text-slate-600">Submit a request for Super Admin approval.</p>
+              <button type="button" onClick={handlePasswordResetRequest} className="px-3 py-2 rounded-lg bg-slate-800 text-white font-bold">Request Password Reset</button>
+              <input value={resetToken} onChange={e => setResetToken(e.target.value)} placeholder="Approved one-time reset token" className="w-full p-2 rounded-lg border border-slate-200" />
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="New password" className="w-full p-2 rounded-lg border border-slate-200" />
+              <button type="button" onClick={handlePasswordReset} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold">Complete Password Reset</button>
+              <button type="button" onClick={() => setShowReset(false)} className="ml-2 text-slate-500 font-bold">Cancel</button>
+            </div>
+          )}
 
           <button
             type="submit"

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import {
   User,
@@ -94,6 +95,7 @@ class DatabaseService {
 
     const seededUsers = INITIAL_USERS.map(user => ({
       ...user,
+      status: 'ACTIVE' as const,
       passwordHash: user.role === 'USER' ? studentHash : adminHash
     }));
 
@@ -108,6 +110,7 @@ class DatabaseService {
         name: 'ANSHUMAN MISHRA',
         email: superAdminEmail,
         role: 'SUPER_ADMIN',
+        status: 'ACTIVE',
         passwordHash: bcrypt.hashSync(superAdminPassword, 10),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -142,6 +145,20 @@ class DatabaseService {
         user.role = migratedRole;
         changed = true;
       }
+      if (!user.status) {
+        user.status = 'ACTIVE';
+        changed = true;
+      }
+    }
+    for (const request of this.data.adminRequests) {
+      if (!request.type) {
+        request.type = 'ADMIN_REGISTRATION';
+        changed = true;
+      }
+      if (request.type === 'ADMIN_REGISTRATION' && !request.requestedRole) {
+        request.requestedRole = 'ADMIN';
+        changed = true;
+      }
     }
 
     const configuredSuperAdminEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
@@ -150,6 +167,13 @@ class DatabaseService {
     }
     if (configuredSuperAdminEmail) {
       const superAdmin = this.data.users.find(user => user.email.toLowerCase() === configuredSuperAdminEmail);
+      for (const user of this.data.users) {
+        if (user.role === 'SUPER_ADMIN' && user.email.toLowerCase() !== configuredSuperAdminEmail) {
+          user.role = 'ADMIN';
+          user.updatedAt = new Date().toISOString();
+          changed = true;
+        }
+      }
       if (superAdmin && superAdmin.role !== 'SUPER_ADMIN') {
         superAdmin.role = 'SUPER_ADMIN';
         superAdmin.updatedAt = new Date().toISOString();
@@ -165,6 +189,7 @@ class DatabaseService {
           name: 'ANSHUMAN MISHRA',
           email: configuredSuperAdminEmail,
           role: 'SUPER_ADMIN',
+          status: 'ACTIVE',
           passwordHash: bcrypt.hashSync(superAdminPassword, 10),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -263,7 +288,7 @@ class DatabaseService {
     return safeUser;
   }
 
-  public createUser(userData: { name: string; email: string; password: string; role?: 'USER' }) {
+  public createUser(userData: { name: string; email: string; password: string; status?: 'ACTIVE' | 'PENDING' }) {
     const existing = this.findUserByEmail(userData.email);
     if (existing) throw new Error('A user with this email address already exists.');
 
@@ -273,6 +298,7 @@ class DatabaseService {
       name: userData.name,
       email: userData.email,
       role: 'USER',
+      status: userData.status || 'ACTIVE',
       passwordHash,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -288,6 +314,7 @@ class DatabaseService {
   public verifyCredentials(email: string, password: string) {
     const user = this.findUserByEmail(email);
     if (!user) return null;
+    if (user.status !== 'ACTIVE') return null;
     const valid = bcrypt.compareSync(password, user.passwordHash);
     if (!valid) return null;
     const { passwordHash, ...safeUser } = user;
@@ -301,25 +328,28 @@ class DatabaseService {
   public createAdminRequest(userId: string): AdminRequest {
     const user = this.data.users.find(candidate => candidate.id === userId);
     if (!user) throw new Error('User not found.');
-    const existingPending = this.data.adminRequests.find(request => request.userId === userId && request.status === 'PENDING');
+    const existingPending = this.data.adminRequests.find(request => request.userId === userId && request.type === 'ADMIN_REGISTRATION' && request.status === 'PENDING');
     if (existingPending) return existingPending;
     const request: AdminRequest = {
       id: 'admin-request-' + Math.random().toString(36).substring(2, 9),
       userId,
       name: user.name,
       email: user.email,
+      type: 'ADMIN_REGISTRATION',
       requestedRole: 'ADMIN',
       status: 'PENDING',
       createdAt: new Date().toISOString()
     };
     this.data.adminRequests.push(request);
-    this.addAuditLog({ actorId: userId, action: 'ADMIN_REQUEST_SUBMITTED', targetUserId: userId, requestId: request.id });
+    this.addAuditLog({ actorId: userId, actorRole: user.role, action: 'ADMIN_REGISTRATION_REQUESTED', targetUserId: userId, targetRole: user.role, requestId: request.id });
     this.persist();
     return request;
   }
 
   public getAdminRequests(): AdminRequest[] {
-    return [...this.data.adminRequests].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return [...this.data.adminRequests]
+      .filter(request => request.type === 'ADMIN_REGISTRATION')
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   public getAdminRequestForUser(userId: string): AdminRequest | undefined {
@@ -339,17 +369,132 @@ class DatabaseService {
     if (approve) {
       user.role = 'ADMIN';
       user.updatedAt = now;
-      this.addAuditLog({ actorId: reviewerId, action: 'ROLE_CHANGED', targetUserId: user.id, requestId: request.id, details: 'USER to ADMIN' });
+      this.addAuditLog({ actorId: reviewerId, actorRole: 'SUPER_ADMIN', action: 'ROLE_CHANGED', targetUserId: user.id, targetRole: 'ADMIN', requestId: request.id, reason: 'USER to ADMIN' });
     }
     this.addAuditLog({
       actorId: reviewerId,
-      action: approve ? 'ADMIN_REQUEST_APPROVED' : 'ADMIN_REQUEST_REJECTED',
+      actorRole: 'SUPER_ADMIN',
+      action: approve ? 'ADMIN_REGISTRATION_APPROVED' : 'ADMIN_REGISTRATION_REJECTED',
       targetUserId: user.id,
+      targetRole: user.role,
       requestId: request.id,
-      details: request.reason
+      reason: request.reason
     });
     this.persist();
     return request;
+  }
+
+  public createStudentRegistrationRequest(userId: string): AdminRequest {
+    const user = this.data.users.find(candidate => candidate.id === userId);
+    if (!user) throw new Error('User not found.');
+    const request: AdminRequest = {
+      id: 'student-request-' + Math.random().toString(36).substring(2, 9),
+      userId,
+      name: user.name,
+      email: user.email,
+      type: 'STUDENT_REGISTRATION',
+      status: 'PENDING',
+      createdAt: new Date().toISOString()
+    };
+    this.data.adminRequests.push(request);
+    this.addAuditLog({ actorId: userId, actorRole: user.role, action: 'STUDENT_REGISTRATION_REQUESTED', targetUserId: userId, targetRole: user.role, requestId: request.id });
+    this.persist();
+    return request;
+  }
+
+  public getRequests(type?: AdminRequest['type']): AdminRequest[] {
+    return [...this.data.adminRequests]
+      .filter(request => !type || request.type === type)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  public getRequestForUser(userId: string, type?: AdminRequest['type']): AdminRequest | undefined {
+    return this.getRequests(type).find(request => request.userId === userId);
+  }
+
+  public reviewStudentRegistration(requestId: string, reviewerId: string, approve: boolean, reason?: string): AdminRequest | null {
+    return this.reviewRequest(requestId, reviewerId, approve, reason, 'STUDENT_REGISTRATION');
+  }
+
+  public requestPasswordReset(email: string): AdminRequest | null {
+    const user = this.findUserByEmail(email);
+    if (!user || user.status === 'REJECTED') return null;
+    const existingPending = this.data.adminRequests.find(request => request.userId === user.id && request.type === 'PASSWORD_RESET' && request.status === 'PENDING');
+    if (existingPending) return existingPending;
+    const request: AdminRequest = {
+      id: 'password-request-' + Math.random().toString(36).substring(2, 9),
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      type: 'PASSWORD_RESET',
+      role: user.role,
+      status: 'PENDING',
+      createdAt: new Date().toISOString()
+    };
+    this.data.adminRequests.push(request);
+    this.addAuditLog({ actorId: user.id, actorRole: user.role, action: 'PASSWORD_RESET_REQUESTED', targetUserId: user.id, targetRole: user.role, requestId: request.id });
+    this.persist();
+    return request;
+  }
+
+  public reviewPasswordReset(requestId: string, reviewerId: string, approve: boolean, reason?: string): AdminRequest | null {
+    const request = this.data.adminRequests.find(candidate => candidate.id === requestId && candidate.type === 'PASSWORD_RESET');
+    if (!request || request.status !== 'PENDING') return null;
+    if (request.userId === reviewerId) throw new Error('You cannot review your own password reset request.');
+    if (!approve) return this.reviewRequest(requestId, reviewerId, false, reason, 'PASSWORD_RESET');
+    const token = crypto.randomBytes(32).toString('hex');
+    const reviewed = this.reviewRequest(requestId, reviewerId, true, reason, 'PASSWORD_RESET');
+    if (!reviewed) return null;
+    reviewed.resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    reviewed.resetTokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    reviewed.resetTokenUsedAt = undefined;
+    this.persist();
+    return { ...reviewed, reason: token };
+  }
+
+  public completePasswordReset(token: string, newPassword: string): boolean {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const request = this.data.adminRequests.find(candidate => candidate.type === 'PASSWORD_RESET' && candidate.status === 'APPROVED' && candidate.resetTokenHash === tokenHash && !candidate.resetTokenUsedAt && candidate.resetTokenExpiresAt && new Date(candidate.resetTokenExpiresAt).getTime() > Date.now());
+    if (!request) return false;
+    const user = this.data.users.find(candidate => candidate.id === request.userId);
+    if (!user) return false;
+    user.passwordHash = bcrypt.hashSync(newPassword, 10);
+    user.updatedAt = new Date().toISOString();
+    request.resetTokenUsedAt = new Date().toISOString();
+    this.addAuditLog({ actorId: user.id, actorRole: user.role, action: 'PASSWORD_RESET_COMPLETED', targetUserId: user.id, targetRole: user.role, requestId: request.id });
+    this.persist();
+    return true;
+  }
+
+  public setUserStatus(userId: string, actorId: string, suspended: boolean): User | null {
+    const user = this.data.users.find(candidate => candidate.id === userId);
+    if (!user || user.id === actorId || user.role === 'SUPER_ADMIN') return null;
+    user.status = suspended ? 'SUSPENDED' : 'ACTIVE';
+    user.updatedAt = new Date().toISOString();
+    this.addAuditLog({ actorId, actorRole: 'SUPER_ADMIN', action: suspended ? (user.role === 'ADMIN' ? 'ADMIN_SUSPENDED' : 'USER_SUSPENDED') : (user.role === 'ADMIN' ? 'ADMIN_UNSUSPENDED' : 'USER_UNSUSPENDED'), targetUserId: user.id, targetRole: user.role });
+    this.persist();
+    const { passwordHash: _, ...safeUser } = user;
+    return safeUser;
+  }
+
+  private reviewRequest(requestId: string, reviewerId: string, approve: boolean, reason: string | undefined, type: AdminRequest['type']): AdminRequest | null {
+    const request = this.data.adminRequests.find(candidate => candidate.id === requestId && candidate.type === type);
+    if (!request || request.status !== 'PENDING') return null;
+    const user = this.data.users.find(candidate => candidate.id === request.userId);
+    if (!user) return null;
+    const now = new Date().toISOString();
+    request.status = approve ? 'APPROVED' : 'REJECTED';
+    request.reviewedAt = now;
+    request.reviewedBy = reviewerId;
+    request.reason = reason?.trim() || undefined;
+    if (type === 'STUDENT_REGISTRATION') user.status = approve ? 'ACTIVE' : 'REJECTED';
+    this.addAuditLog({ actorId: reviewerId, actorRole: 'SUPER_ADMIN', action: type === 'STUDENT_REGISTRATION' ? (approve ? 'STUDENT_REGISTRATION_APPROVED' : 'STUDENT_REGISTRATION_REJECTED') : (approve ? 'PASSWORD_RESET_APPROVED' : 'PASSWORD_RESET_REJECTED'), targetUserId: user.id, targetRole: user.role, requestId: request.id, reason: request.reason });
+    this.persist();
+    return request;
+  }
+
+  public getAuditLogs(): AuditLog[] {
+    return [...this.data.auditLogs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
 
   private addAuditLog(log: Omit<AuditLog, 'id' | 'timestamp'>) {

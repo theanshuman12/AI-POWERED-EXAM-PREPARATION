@@ -14,12 +14,21 @@ const router = Router();
 // --- Auth Routes ---
 router.post('/auth/register', authCtrl.register);
 router.post('/auth/login', authCtrl.login);
+router.post('/auth/password-reset-requests', authCtrl.requestPasswordReset);
+router.get('/auth/password-reset-requests/me', authenticateToken, authCtrl.getMyPasswordResetRequest);
+router.post('/auth/password-reset', authCtrl.completePasswordReset);
 router.get('/auth/profile', authenticateToken, authCtrl.getProfile);
 router.get('/auth/students', authenticateToken, requireAdmin, authCtrl.getAllStudents);
 router.post('/admin-requests', authenticateToken, authCtrl.submitAdminRequest);
 router.get('/admin-requests/me', authenticateToken, authCtrl.getMyAdminRequest);
 router.get('/admin-requests', authenticateToken, requireSuperAdmin, authCtrl.getAdminRequests);
 router.put('/admin-requests/:id/:action', authenticateToken, requireSuperAdmin, authCtrl.reviewAdminRequest);
+router.get('/super-admin/registration-requests', authenticateToken, requireSuperAdmin, authCtrl.getStudentRegistrationRequests);
+router.post('/super-admin/registration-requests/:id/:action', authenticateToken, requireSuperAdmin, authCtrl.reviewStudentRegistration);
+router.get('/super-admin/password-reset-requests', authenticateToken, requireSuperAdmin, authCtrl.getPasswordResetRequests);
+router.post('/super-admin/password-reset-requests/:id/:action', authenticateToken, requireSuperAdmin, authCtrl.reviewPasswordReset);
+router.get('/super-admin/audit-logs', authenticateToken, requireSuperAdmin, authCtrl.getAuditLogs);
+router.post('/super-admin/users/:id/:action', authenticateToken, requireSuperAdmin, authCtrl.updateUserSuspension);
 
 // --- Subject Routes ---
 router.get('/subjects', subCtrl.getSubjects);

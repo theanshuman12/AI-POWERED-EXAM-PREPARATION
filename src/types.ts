@@ -1,28 +1,58 @@
 export type Role = 'USER' | 'ADMIN' | 'SUPER_ADMIN';
 
-export type AdminRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type AccountStatus = 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'REJECTED';
+
+export type RequestType = 'STUDENT_REGISTRATION' | 'ADMIN_REGISTRATION' | 'PASSWORD_RESET';
+
+export type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export type AdminRequestStatus = RequestStatus;
+
+export type AuditAction =
+  | 'STUDENT_REGISTRATION_REQUESTED'
+  | 'STUDENT_REGISTRATION_APPROVED'
+  | 'STUDENT_REGISTRATION_REJECTED'
+  | 'ADMIN_REGISTRATION_REQUESTED'
+  | 'ADMIN_REGISTRATION_APPROVED'
+  | 'ADMIN_REGISTRATION_REJECTED'
+  | 'PASSWORD_RESET_REQUESTED'
+  | 'PASSWORD_RESET_APPROVED'
+  | 'PASSWORD_RESET_REJECTED'
+  | 'PASSWORD_RESET_COMPLETED'
+  | 'USER_SUSPENDED'
+  | 'USER_UNSUSPENDED'
+  | 'ADMIN_SUSPENDED'
+  | 'ADMIN_UNSUSPENDED'
+  | 'ROLE_CHANGED';
 
 export interface AdminRequest {
   id: string;
   userId: string;
   name: string;
   email: string;
-  requestedRole: 'ADMIN';
-  status: AdminRequestStatus;
+  type: RequestType;
+  requestedRole?: 'ADMIN';
+  role?: Role;
+  status: RequestStatus;
   createdAt: string;
   reviewedAt?: string;
   reviewedBy?: string;
   reason?: string;
+  resetTokenHash?: string;
+  resetTokenExpiresAt?: string;
+  resetTokenUsedAt?: string;
 }
 
 export interface AuditLog {
   id: string;
   actorId: string;
-  action: 'ADMIN_REQUEST_SUBMITTED' | 'ADMIN_REQUEST_APPROVED' | 'ADMIN_REQUEST_REJECTED' | 'ROLE_CHANGED';
+  actorRole: Role;
+  action: AuditAction;
   targetUserId: string;
+  targetRole: Role;
   requestId?: string;
   timestamp: string;
-  details?: string;
+  reason?: string;
 }
 
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
@@ -34,6 +64,7 @@ export interface User {
   name: string;
   email: string;
   role: Role;
+  status: AccountStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -147,6 +178,13 @@ export interface Recommendation {
 export interface AuthResponse {
   token: string;
   user: User;
+}
+
+export interface RegistrationResponse {
+  user: User;
+  request: AdminRequest;
+  adminRequest?: AdminRequest;
+  message: string;
 }
 
 export interface PerformanceAnalysisResponse {

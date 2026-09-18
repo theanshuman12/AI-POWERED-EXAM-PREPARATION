@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, Role } from '../types';
+import { User, Role, RegistrationResponse } from '../types';
 import { api } from '../services/api';
 
 interface AuthContextType {
@@ -8,7 +8,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string, requestAdminAccess?: boolean) => Promise<RegistrationResponse>;
   logout: () => void;
   loginAsDemo: (role: 'student' | 'admin') => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -54,13 +54,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register = async (name: string, email: string, password: string) => {
+  const register = async (name: string, email: string, password: string, requestAdminAccess = false) => {
     setIsLoading(true);
     try {
-      const res = await api.register({ name, email, password });
-      api.setToken(res.token);
-      setToken(res.token);
-      setUser(res.user);
+      return await api.register({ name, email, password, requestAdminAccess });
     } finally {
       setIsLoading(false);
     }

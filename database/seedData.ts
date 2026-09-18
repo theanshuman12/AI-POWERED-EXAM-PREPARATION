@@ -1006,6 +1006,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Student',
     email: 'student@example.com',
     role: 'USER',
+    status: 'ACTIVE',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -1014,6 +1015,7 @@ export const INITIAL_USERS: User[] = [
     name: 'vikram',
     email: 'vikram@example.com',
     role: 'ADMIN',
+    status: 'ACTIVE',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -1022,6 +1024,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Aisha',
     email: 'aisha.admin@example.com',
     role: 'ADMIN',
+    status: 'ACTIVE',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -1030,6 +1033,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Nathan',
     email: 'nathan.admin@example.com',
     role: 'ADMIN',
+    status: 'ACTIVE',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -1038,6 +1042,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Olivia',
     email: 'olivia.admin@example.com',
     role: 'ADMIN',
+    status: 'ACTIVE',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -1046,6 +1051,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Mason',
     email: 'mason.admin@example.com',
     role: 'ADMIN',
+    status: 'ACTIVE',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }

@@ -56,7 +56,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'admin-topics', label: 'Manage Topics', icon: FolderTree },
     { id: 'admin-questions', label: 'Question Bank', icon: ListOrdered },
     { id: 'admin-tests', label: 'Manage Mock Tests', icon: FileText },
-    ...(user.role === 'SUPER_ADMIN' ? [{ id: 'admin-requests', label: 'Admin Requests', icon: UserCheck }] : [])
+    ...(user.role === 'SUPER_ADMIN' ? [
+      { id: 'admin-student-requests', label: 'Student Registration Requests', icon: UserCheck },
+      { id: 'admin-requests', label: 'Admin Requests', icon: UserCheck },
+      { id: 'admin-password-resets', label: 'Password Reset Requests', icon: UserCheck },
+      { id: 'admin-users', label: 'User Management', icon: Users },
+      { id: 'admin-audit', label: 'Audit Logs', icon: Info }
+    ] : [])
   ];
 
   const links = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? adminLinks : studentLinks;

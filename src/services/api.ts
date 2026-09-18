@@ -9,7 +9,8 @@ import {
   PerformanceAnalysisResponse,
   Recommendation,
   AuthResponse,
-  AdminRequest
+  AdminRequest,
+  RegistrationResponse
 } from '../types';
 
 const API_BASE = '/api';
@@ -65,8 +66,8 @@ class ApiClient {
     });
   }
 
-  register(data: { name: string; email: string; password: string }): Promise<AuthResponse> {
-    return this.request<AuthResponse>('/auth/register', {
+  register(data: { name: string; email: string; password: string; requestAdminAccess?: boolean }): Promise<RegistrationResponse> {
+    return this.request<RegistrationResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -89,6 +90,46 @@ class ApiClient {
       method: 'PUT',
       body: JSON.stringify({ reason })
     });
+  }
+
+  requestPasswordReset(email: string): Promise<{ message: string }> {
+    return this.request('/auth/password-reset-requests', { method: 'POST', body: JSON.stringify({ email }) });
+  }
+
+  completePasswordReset(token: string, password: string): Promise<{ message: string }> {
+    return this.request('/auth/password-reset', { method: 'POST', body: JSON.stringify({ token, password }) });
+  }
+
+  getMyPasswordResetRequest(): Promise<{ request: AdminRequest | null }> {
+    return this.request('/auth/password-reset-requests/me');
+  }
+
+  getStudentRegistrationRequests(): Promise<{ requests: AdminRequest[] }> {
+    return this.request('/super-admin/registration-requests');
+  }
+
+  reviewStudentRegistration(id: string, action: 'approve' | 'reject', reason?: string): Promise<{ request: AdminRequest; message: string }> {
+    return this.request(`/super-admin/registration-requests/${id}/${action}`, { method: 'POST', body: JSON.stringify({ reason }) });
+  }
+
+  getPasswordResetRequests(): Promise<{ requests: AdminRequest[] }> {
+    return this.request('/super-admin/password-reset-requests');
+  }
+
+  reviewPasswordReset(id: string, action: 'approve' | 'reject', reason?: string): Promise<{ request: AdminRequest; resetToken?: string; message: string }> {
+    return this.request(`/super-admin/password-reset-requests/${id}/${action}`, { method: 'POST', body: JSON.stringify({ reason }) });
+  }
+
+  suspendUser(id: string): Promise<{ message: string; user: User }> {
+    return this.request(`/super-admin/users/${id}/suspend`, { method: 'POST' });
+  }
+
+  unsuspendUser(id: string): Promise<{ message: string; user: User }> {
+    return this.request(`/super-admin/users/${id}/unsuspend`, { method: 'POST' });
+  }
+
+  getAuditLogs(): Promise<{ logs: any[] }> {
+    return this.request('/super-admin/audit-logs');
   }
 
   getProfile(): Promise<{ user: User }> {

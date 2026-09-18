@@ -36,6 +36,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [recentAttempts, setRecentAttempts] = useState<TestAttempt[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [adminRequest, setAdminRequest] = useState<any>(null);
+  const [passwordResetRequest, setPasswordResetRequest] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -52,6 +53,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         setSubjects(subRes.slice(0, 4));
         const requestRes = await api.getMyAdminRequest();
         setAdminRequest(requestRes.request);
+        const resetRequestRes = await api.getMyPasswordResetRequest();
+        setPasswordResetRequest(resetRequestRes.request);
       } catch (err) {
         console.error('Failed to load student dashboard:', err);
       } finally {
@@ -110,6 +113,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         <div className={`rounded-2xl p-4 border text-xs ${adminRequest.status === 'REJECTED' ? 'bg-rose-50 border-rose-200 text-rose-800' : adminRequest.status === 'APPROVED' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
           <strong>Admin access: {adminRequest.status === 'PENDING' ? 'Admin approval pending.' : adminRequest.status}</strong>
           {adminRequest.reason && <span> {adminRequest.reason}</span>}
+        </div>
+      )}
+
+      {passwordResetRequest && (
+        <div className="rounded-2xl p-4 border text-xs bg-slate-50 border-slate-200 text-slate-700">
+          <strong>Password reset: {passwordResetRequest.status}</strong>
+          {passwordResetRequest.reason && <span> {passwordResetRequest.reason}</span>}
         </div>
       )}
 

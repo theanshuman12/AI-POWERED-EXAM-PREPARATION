@@ -50,7 +50,17 @@ Configure `JWT_SECRET`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and `APP_UR
 
 ### Authentication and Admin Authorization
 
-Users are always registered with the `USER` role. Admin access is requested through `POST /api/admin-requests` and remains pending until the one `SUPER_ADMIN` account approves it. The request owner can check `GET /api/admin-requests/me`; only `SUPER_ADMIN` can call `GET /api/admin-requests` or `PUT /api/admin-requests/:id/approve` and `/reject`. Existing `ADMIN` accounts retain academic administration features but cannot approve requests or change roles. Request reviews and role changes are stored in the embedded JSON `auditLogs` collection.
+New users are created as `USER` with `PENDING` status and cannot log in until `SUPER_ADMIN` approval. Admin access is requested through `POST /api/admin-requests` and remains pending until the one `SUPER_ADMIN` account approves it. Password resets also require a Super Admin-approved, short-lived, one-time token. Account suspension is enforced on login and every authenticated request. Existing `ADMIN` accounts retain academic administration features but cannot approve requests, reset passwords, suspend users, or change roles. Request reviews, password-reset completion, role changes, and suspension changes are stored in the embedded JSON `auditLogs` collection.
+
+### Admin Access System
+
+- Normal users register as `USER` with `PENDING` status.
+- Student registration requests remain `PENDING` until approved.
+- Users can request Admin access separately; approval changes only `USER` to `ADMIN`.
+- Password reset requests remain `PENDING` until approved by `SUPER_ADMIN`.
+- Approved resets use a hashed, 15-minute, single-use token.
+- Only `SUPER_ADMIN` can approve or reject requests, suspend accounts, view audit logs, or manage users.
+- Existing `ADMIN` users cannot approve other users, suspend accounts, or change roles.
 
 ### Admin Access System
 

@@ -15,14 +15,40 @@ import {
   Search,
   Filter,
   Layers,
-  ShieldCheck
+  ShieldCheck,
+  UserCheck,
+  LockKeyhole,
+  FileClock
 } from 'lucide-react';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 
-export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' }> = ({ initialTab = 'overview' }) => {
+const RequestList: React.FC<{
+  title: string;
+  requests: any[];
+  showRole?: boolean;
+  onReview: (id: string, action: 'approve' | 'reject') => void;
+}> = ({ title, requests, showRole = false, onReview }) => (
+  <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">{title}</h3>
+    {requests.map(request => (
+      <div key={request.id} className="py-3 border-b border-slate-100 flex items-center justify-between gap-4">
+        <div><p className="text-xs font-bold text-slate-900">{request.name}</p><p className="text-[11px] text-slate-500">{request.email}{showRole && ` · ${request.role}`} · {new Date(request.createdAt).toLocaleString()}</p></div>
+        <div className="flex items-center gap-2"><span className="text-[10px] font-bold uppercase text-slate-500">{request.status}</span>{request.status === 'PENDING' && <><button onClick={() => onReview(request.id, 'approve')} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold">Approve</button><button onClick={() => onReview(request.id, 'reject')} className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold">Reject</button></>}</div>
+      </div>
+    ))}
+  </div>
+);
+
+export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' | 'student-requests' | 'password-resets' | 'users' | 'audit' }> = ({ initialTab = 'overview' }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'questions' | 'subjects' | 'tests' | 'requests'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'questions' | 'subjects' | 'tests' | 'requests' | 'student-requests' | 'password-resets' | 'users' | 'audit'>(initialTab);
   const [adminRequests, setAdminRequests] = useState<any[]>([]);
+  const [studentRequests, setStudentRequests] = useState<any[]>([]);
+  const [passwordResetRequests, setPasswordResetRequests] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [passwordResetRequest, setPasswordResetRequest] = useState<any>(null);
+  const [suspendingUserId, setSuspendingUserId] = useState<string | null>(null);
+  const [userManagementError, setUserManagementError] = useState<string | null>(null);
   const [students, setStudents] = useState<User[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -62,8 +88,19 @@ export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' }> 
       setQuestions(qRes);
       setTests(tRes);
       if (user?.role === 'SUPER_ADMIN') {
-        const requestRes = await api.getAdminRequests();
+        const [requestRes, studentRequestRes, resetRequestRes, auditRes] = await Promise.all([
+          api.getAdminRequests(),
+          api.getStudentRegistrationRequests(),
+          api.getPasswordResetRequests(),
+          api.getAuditLogs()
+        ]);
         setAdminRequests(requestRes.requests);
+        setStudentRequests(studentRequestRes.requests);
+        setPasswordResetRequests(resetRequestRes.requests);
+        setAuditLogs(auditRes.logs);
+      } else if (user?.role === 'ADMIN') {
+        const resetRequestRes = await api.getMyPasswordResetRequest();
+        setPasswordResetRequest(resetRequestRes.request);
       }
       if (subRes.length > 0) {
         setNewSubjectId(subRes[0].id);
@@ -90,6 +127,34 @@ export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' }> 
       setAdminRequests(requestRes.requests);
     } catch (err: any) {
       alert(err.message);
+    }
+  };
+
+  const reviewStudentRequest = async (id: string, action: 'approve' | 'reject') => {
+    const reason = action === 'reject' ? window.prompt('Reason for rejection (optional):') || undefined : undefined;
+    await api.reviewStudentRegistration(id, action, reason);
+    const response = await api.getStudentRegistrationRequests();
+    setStudentRequests(response.requests);
+  };
+
+  const reviewPasswordRequest = async (id: string, action: 'approve' | 'reject') => {
+    const reason = action === 'reject' ? window.prompt('Reason for rejection (optional):') || undefined : undefined;
+    const response = await api.reviewPasswordReset(id, action, reason);
+    if (response.resetToken) window.prompt('One-time reset token. Share it securely with the requester:', response.resetToken);
+    const requests = await api.getPasswordResetRequests();
+    setPasswordResetRequests(requests.requests);
+  };
+
+  const updateSuspension = async (id: string, suspended: boolean) => {
+    setSuspendingUserId(id);
+    setUserManagementError(null);
+    try {
+      const response = suspended ? await api.suspendUser(id) : await api.unsuspendUser(id);
+      setStudents(current => current.map(student => student.id === id ? response.user : student));
+    } catch (err: any) {
+      setUserManagementError(err.message || 'Unable to update this account status.');
+    } finally {
+      setSuspendingUserId(null);
     }
   };
 
@@ -182,7 +247,13 @@ export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' }> 
           { id: 'students', label: `Students (${students.length})`, icon: Users },
           { id: 'subjects', label: `Subjects (${subjects.length})`, icon: BookOpen },
           { id: 'tests', label: `Mock Tests (${tests.length})`, icon: FileText },
-          ...(user?.role === 'SUPER_ADMIN' ? [{ id: 'requests', label: `Admin Requests (${adminRequests.filter(r => r.status === 'PENDING').length})`, icon: ShieldCheck }] : [])
+          ...(user?.role === 'SUPER_ADMIN' ? [
+            { id: 'student-requests', label: `Student Requests (${studentRequests.filter(r => r.status === 'PENDING').length})`, icon: UserCheck },
+            { id: 'requests', label: `Admin Requests (${adminRequests.filter(r => r.status === 'PENDING').length})`, icon: ShieldCheck },
+            { id: 'password-resets', label: `Password Resets (${passwordResetRequests.filter(r => r.status === 'PENDING').length})`, icon: LockKeyhole },
+            { id: 'users', label: 'User Management', icon: Users },
+            { id: 'audit', label: 'Audit Logs', icon: FileClock }
+          ] : [])
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -372,6 +443,33 @@ export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' }> 
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {activeTab === 'student-requests' && user?.role === 'SUPER_ADMIN' && (
+        <RequestList title="Student Registration Requests" requests={studentRequests} onReview={reviewStudentRequest} />
+      )}
+
+      {activeTab === 'password-resets' && user?.role === 'SUPER_ADMIN' && (
+        <RequestList title="Password Reset Requests" requests={passwordResetRequests} onReview={reviewPasswordRequest} showRole />
+      )}
+
+      {activeTab === 'users' && user?.role === 'SUPER_ADMIN' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">User Management</h3>
+          {userManagementError && <p className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700">{userManagementError}</p>}
+          {students.map(account => <div key={account.id} className="py-3 border-b border-slate-100 flex items-center justify-between gap-4"><div><p className="text-xs font-bold">{account.name}</p><p className="text-[11px] text-slate-500">{account.email} · {account.role}</p></div><div className="flex items-center gap-2"><span className="text-[10px] font-bold uppercase">{account.status}</span>{account.role !== 'SUPER_ADMIN' && <button type="button" disabled={suspendingUserId === account.id} onClick={() => updateSuspension(account.id, account.status !== 'SUSPENDED')} className="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-bold disabled:opacity-50">{suspendingUserId === account.id ? 'Updating...' : account.status === 'SUSPENDED' ? 'Unsuspend' : 'Suspend'}</button>}</div></div>)}
+        </div>
+      )}
+
+      {activeTab === 'audit' && user?.role === 'SUPER_ADMIN' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-3"><h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Audit Logs</h3>{auditLogs.map(log => <div key={log.id} className="py-2 border-b border-slate-100 text-xs"><strong>{log.action}</strong> · target {log.targetUserId} · {new Date(log.timestamp).toLocaleString()}</div>)}</div>
+      )}
+
+      {passwordResetRequest && user?.role === 'ADMIN' && (
+        <div className="rounded-2xl p-4 border text-xs bg-slate-50 border-slate-200 text-slate-700">
+          <strong>Password reset: {passwordResetRequest.status}</strong>
+          {passwordResetRequest.reason && <span> {passwordResetRequest.reason}</span>}
         </div>
       )}
 

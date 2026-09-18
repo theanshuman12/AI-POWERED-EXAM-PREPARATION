@@ -39,6 +39,10 @@ export const authenticateToken = (req: AuthenticatedRequest, res: Response, next
       res.status(401).json({ message: 'Invalid or expired session. User not found.' });
       return;
     }
+    if (user.status !== 'ACTIVE') {
+      res.status(403).json({ message: 'Account is not active.' });
+      return;
+    }
     req.user = user;
     next();
   } catch (err) {
