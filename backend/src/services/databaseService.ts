@@ -27,7 +27,10 @@ import {
   UPPET_REASONING_TESTS,
   UPPET_GENERAL_STUDIES_TOPICS,
   UPPET_GENERAL_STUDIES_QUESTIONS,
-  UPPET_GENERAL_STUDIES_TESTS
+  UPPET_GENERAL_STUDIES_TESTS,
+  UPPET_PAPER_MOCK_TOPICS,
+  UPPET_PAPER_MOCK_QUESTIONS,
+  UPPET_PAPER_MOCK_TESTS
 } from '../../../database/seedData';
 
 interface DatabaseSchema {
@@ -122,8 +125,8 @@ class DatabaseService {
       exams: INITIAL_EXAMS,
       subjects: INITIAL_SUBJECTS,
       topics: INITIAL_TOPICS,
-      questions: [...INITIAL_QUESTIONS, ...UPPET_REASONING_QUESTIONS, ...UPPET_GENERAL_STUDIES_QUESTIONS],
-      tests: [...INITIAL_TESTS, ...UPPET_REASONING_TESTS, ...UPPET_GENERAL_STUDIES_TESTS],
+      questions: [...INITIAL_QUESTIONS, ...UPPET_REASONING_QUESTIONS, ...UPPET_GENERAL_STUDIES_QUESTIONS, ...UPPET_PAPER_MOCK_QUESTIONS],
+      tests: [...INITIAL_TESTS, ...UPPET_REASONING_TESTS, ...UPPET_GENERAL_STUDIES_TESTS, ...UPPET_PAPER_MOCK_TESTS],
       testAttempts: [],
       questionAttempts: [],
       recommendations: [],
@@ -257,6 +260,24 @@ class DatabaseService {
       }
     }
     for (const test of UPPET_GENERAL_STUDIES_TESTS) {
+      if (!this.data.tests.some(existing => existing.id === test.id)) {
+        this.data.tests.push(test);
+        changed = true;
+      }
+    }
+    for (const topic of UPPET_PAPER_MOCK_TOPICS) {
+      if (!this.data.topics.some(existing => existing.id === topic.id)) {
+        this.data.topics.push(topic);
+        changed = true;
+      }
+    }
+    for (const question of UPPET_PAPER_MOCK_QUESTIONS) {
+      if (!this.data.questions.some(existing => existing.id === question.id)) {
+        this.data.questions.push(question);
+        changed = true;
+      }
+    }
+    for (const test of UPPET_PAPER_MOCK_TESTS) {
       if (!this.data.tests.some(existing => existing.id === test.id)) {
         this.data.tests.push(test);
         changed = true;

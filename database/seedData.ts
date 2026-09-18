@@ -79,6 +79,14 @@ export const INITIAL_SUBJECTS: Subject[] = [
     description: 'Verbal and non-verbal reasoning practice for UPPET.',
     icon: 'BrainCircuit',
     createdAt: new Date().toISOString()
+  },
+  {
+    id: 'subj-uppet-paper-mock',
+    examId: 'exam-uppet',
+    name: 'Paper Mock',
+    description: 'Seven full-length UPPET paper mocks with 100 questions each.',
+    icon: 'FileCheck2',
+    createdAt: new Date().toISOString()
   }
 ];
 
@@ -151,6 +159,10 @@ export const UPPET_GENERAL_STUDIES_TOPICS: Topic[] = [
   { id: 'top-uppet-gs-symbols', subjectId: 'subj-uppet-general-studies', name: 'National Symbols', description: 'National symbols of India.' },
   { id: 'top-uppet-gs-books', subjectId: 'subj-uppet-general-studies', name: 'Books and Authors', description: 'Important Indian books and authors.' },
   { id: 'top-uppet-gs-sports', subjectId: 'subj-uppet-general-studies', name: 'Sports and Awards', description: 'Indian sporting honours and awards.' }
+];
+
+export const UPPET_PAPER_MOCK_TOPICS: Topic[] = [
+  { id: 'top-uppet-paper-mock-mixed', subjectId: 'subj-uppet-paper-mock', name: 'Complete Paper', description: 'Mixed UPPET General Studies and Reasoning paper practice.' }
 ];
 
 export const INITIAL_QUESTIONS: Question[] = [
@@ -931,6 +943,28 @@ export const UPPET_REASONING_QUESTIONS: Question[] = reasoningQuestionData.map((
   correctAnswer,
   explanation,
   difficulty: difficulty as Question['difficulty'],
+  createdAt: new Date().toISOString()
+}));
+
+export const UPPET_PAPER_MOCK_QUESTIONS: Question[] = [
+  ...UPPET_REASONING_QUESTIONS,
+  ...UPPET_GENERAL_STUDIES_QUESTIONS
+].map((question, index) => ({
+  ...question,
+  id: `q-uppet-paper-mock-${index + 1}`,
+  subjectId: 'subj-uppet-paper-mock',
+  topicId: 'top-uppet-paper-mock-mixed'
+}));
+
+export const UPPET_PAPER_MOCK_TESTS: Test[] = Array.from({ length: 7 }, (_, index) => ({
+  id: `test-uppet-paper-mock-${index + 1}`,
+  title: `UPPET Paper Mock ${index + 1}`,
+  subjectId: 'subj-uppet-paper-mock',
+  topics: ['top-uppet-paper-mock-mixed'],
+  questions: UPPET_PAPER_MOCK_QUESTIONS.map(question => question.id),
+  duration: 120,
+  difficulty: 'Medium',
+  status: 'ACTIVE',
   createdAt: new Date().toISOString()
 }));
 
