@@ -48,6 +48,11 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({
     return 'text-rose-600 bg-rose-50 border-rose-200';
   };
 
+  const isPaperMock = attempt.subjectId === 'subj-uppet-paper-mock';
+  const positiveMarks = attempt.positiveMarks ?? attempt.correctAnswers;
+  const negativeMarks = attempt.negativeMarks ?? (attempt.incorrectAnswers * 0.25);
+  const formattedScore = Number(attempt.score).toFixed(2).replace(/\.00$/, '');
+
   const filteredQuestions = questions.filter((_, idx) => {
     const selected = answers[idx];
     const q = questions[idx];
@@ -80,7 +85,7 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({
 
           <div className="flex items-center space-x-4">
             <div className={`flex flex-col items-center justify-center w-28 h-28 sm:w-32 sm:h-32 rounded-3xl border-2 ${getScoreColor(attempt.score)} shadow-xs`}>
-              <span className="text-3xl sm:text-4xl font-black font-display tracking-tight">{attempt.score}%</span>
+              <span className="text-3xl sm:text-4xl font-black font-display tracking-tight">{isPaperMock ? `${formattedScore}/100` : `${attempt.score}%`}</span>
               <span className="text-[11px] font-bold uppercase tracking-wider mt-0.5">Score</span>
             </div>
           </div>
@@ -115,6 +120,20 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({
           </button>
         </div>
       </div>
+
+      {isPaperMock && (
+        <div className="bg-white rounded-2xl p-6 border border-amber-200 shadow-xs space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">UPPET Paper Mock Marking Breakdown</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center text-xs">
+            <div><p className="text-slate-500">Total Questions</p><strong>100</strong></div>
+            <div><p className="text-slate-500">Correct Answers</p><strong>{attempt.correctAnswers}</strong></div>
+            <div><p className="text-slate-500">Wrong Answers</p><strong>{attempt.incorrectAnswers}</strong></div>
+            <div><p className="text-slate-500">Unattempted</p><strong>{attempt.unattempted}</strong></div>
+            <div><p className="text-slate-500">Final Score</p><strong>{formattedScore}/100</strong></div>
+          </div>
+          <p className="text-xs text-slate-600">Positive Marks: {positiveMarks} × 1 = {positiveMarks} · Negative Marks: {attempt.incorrectAnswers} × 0.25 = {Number(negativeMarks).toFixed(2)} · Unattempted: 0 deduction</p>
+        </div>
+      )}
 
       {/* Metrics Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

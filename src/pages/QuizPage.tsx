@@ -45,8 +45,10 @@ export const QuizPage: React.FC<QuizPageProps> = ({
   const [hintText, setHintText] = useState<string | null>(null);
   const [loadingHint, setLoadingHint] = useState<boolean>(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState<boolean>(false);
+  const [isPaperMock, setIsPaperMock] = useState<boolean>(false);
 
   const questionStartTimeRef = useRef<number>(Date.now());
+  const sessionStorageKey = testId ? `ai_prep_quiz_${testId}` : null;
 
   // Load quiz questions
   useEffect(() => {
@@ -57,6 +59,22 @@ export const QuizPage: React.FC<QuizPageProps> = ({
           const testData = await api.getTest(testId);
           setQuestions(testData.questionDetails || []);
           setQuizTitle(testData.title);
+          setIsPaperMock(testData.subjectId === 'subj-uppet-paper-mock');
+          if (sessionStorageKey) {
+            const savedSession = localStorage.getItem(sessionStorageKey);
+            if (savedSession) {
+              try {
+                const parsed = JSON.parse(savedSession);
+                setAnswers(parsed.answers || {});
+                setFlagged(parsed.flagged || {});
+                setResponseTimes(parsed.responseTimes || {});
+                setCurrentIndex(parsed.currentIndex || 0);
+                setTotalTimeTaken(parsed.totalTimeTaken || 0);
+              } catch {
+                localStorage.removeItem(sessionStorageKey);
+              }
+            }
+          }
           setSecondsRemaining((testData.duration || 15) * 60);
         } else {
           const practice = await api.startPractice({
@@ -79,6 +97,11 @@ export const QuizPage: React.FC<QuizPageProps> = ({
 
     fetchQuestions();
   }, [testId, subjectId, topicId, difficulty]);
+
+  useEffect(() => {
+    if (!sessionStorageKey || loading || questions.length === 0 || submitting) return;
+    localStorage.setItem(sessionStorageKey, JSON.stringify({ answers, flagged, responseTimes, currentIndex, totalTimeTaken }));
+  }, [answers, flagged, responseTimes, currentIndex, totalTimeTaken, loading, questions.length, submitting, sessionStorageKey]);
 
   // Timer interval
   useEffect(() => {
@@ -168,6 +191,8 @@ export const QuizPage: React.FC<QuizPageProps> = ({
         answers: formattedAnswers
       });
 
+      if (sessionStorageKey) localStorage.removeItem(sessionStorageKey);
+
       onFinishQuiz({
         ...result,
         questions,
@@ -218,6 +243,16 @@ export const QuizPage: React.FC<QuizPageProps> = ({
 
   return (
     <div id="quiz-page-container" className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+      {isPaperMock && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 space-y-1">
+          <h3 className="font-bold">UPPET Paper Mock - Marking Scheme</h3>
+          <p>Total Questions: 100</p>
+          <p>Total Marks: 100</p>
+          <p>Correct Answer: +1 mark</p>
+          <p>Wrong Answer: -0.25 mark</p>
+          <p>Unattempted: 0 mark</p>
+        </div>
+      )}
       {/* Quiz Top Bar */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>

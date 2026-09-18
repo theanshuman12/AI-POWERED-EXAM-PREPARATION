@@ -131,7 +131,12 @@ export const submitTestAttempt = async (req: AuthenticatedRequest, res: Response
     }
 
     const totalQuestions = answers.length;
-    const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+    const isPaperMock = Boolean(testId && db.getTestById(testId)?.subjectId === 'subj-uppet-paper-mock');
+    const positiveMarks = isPaperMock ? correctAnswers : undefined;
+    const negativeMarks = isPaperMock ? Math.round(incorrectAnswers * 0.25 * 100) / 100 : undefined;
+    const score = isPaperMock
+      ? Math.min(100, Math.max(-25, Math.round((correctAnswers - incorrectAnswers * 0.25) * 100) / 100))
+      : totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
     const accuracy = (correctAnswers + incorrectAnswers) > 0
       ? Math.round((correctAnswers / (correctAnswers + incorrectAnswers)) * 1000) / 10
       : 0;
@@ -147,6 +152,9 @@ export const submitTestAttempt = async (req: AuthenticatedRequest, res: Response
       incorrectAnswers,
       unattempted,
       accuracy,
+      positiveMarks,
+      negativeMarks,
+      maxScore: isPaperMock ? 100 : undefined,
       timeTaken: Number(timeTaken) || 120,
       questionAttempts
     });

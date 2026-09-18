@@ -148,6 +148,9 @@ export interface TestAttempt {
   incorrectAnswers: number;
   unattempted: number;
   accuracy: number; // 0 to 100
+  positiveMarks?: number;
+  negativeMarks?: number;
+  maxScore?: number;
   timeTaken: number; // seconds
   questionAttempts?: QuestionAttempt[];
   createdAt: string;
