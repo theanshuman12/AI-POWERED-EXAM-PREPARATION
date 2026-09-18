@@ -36,7 +36,21 @@ The platform provides one-click demo access directly from the top navigation bar
 
 ---
 
-## 4. Key Functional Capabilities
+## 4. Production Deployment
+
+Build and start the combined Express/Vite application with:
+
+```bash
+npm install
+npm run build
+npm start
+```
+
+Configure `JWT_SECRET` and `APP_URL` in the hosting environment. `PORT` is supplied by the hosting platform and defaults to `3000` for local development. `GEMINI_API_KEY` is optional; without it, the built-in curriculum fallback provides explanations and hints. `MONGO_URI` is optional and the current application continues to use its embedded JSON storage when it is unset. The FastAPI service under `ai-service/` is optional because the Node backend falls back to its native recommendation calculation when the Python analyzer is unavailable. The browser uses same-origin `/api` requests, so no frontend API URL is required.
+
+---
+
+## 5. Key Functional Capabilities
 
 1. **Smart Dashboard**: Real-time preparation progress, average score, overall accuracy, recent tests, and priority adaptive recommendations.
 2. **Curriculum Syllabi**: Comprehensive subject and topic directory with difficulty filters and one-click practice launchers.

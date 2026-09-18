@@ -1,14 +1,18 @@
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
+import 'dotenv/config';
 import { createServer as createViteServer } from 'vite';
 import apiRouter from './backend/src/routes/index';
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
+  const appUrl = process.env.APP_URL?.trim();
 
-  app.use(cors());
+  if (appUrl) {
+    app.use(cors({ origin: appUrl }));
+  }
   app.use(express.json());
 
   // API Health Check
