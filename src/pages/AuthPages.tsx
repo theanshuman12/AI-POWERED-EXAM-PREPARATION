@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
 import {
   GraduationCap,
   Sparkles,
@@ -24,7 +25,8 @@ export const AuthPages: React.FC<AuthPagesProps> = ({
   const [name, setName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const [role, setRole] = useState<'student' | 'admin'>('student');
+  const [requestAdminAccess, setRequestAdminAccess] = useState<boolean>(false);
+  const [requestStatus, setRequestStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -36,7 +38,11 @@ export const AuthPages: React.FC<AuthPagesProps> = ({
       if (mode === 'login') {
         await login(email, password);
       } else {
-        await register(name, email, password, role);
+        await register(name, email, password);
+        if (requestAdminAccess) {
+          await api.submitAdminRequest();
+          setRequestStatus('Your Admin request has been submitted and is awaiting approval from the Super Admin.');
+        }
       }
       onSuccess();
     } catch (err: any) {
@@ -120,17 +126,15 @@ export const AuthPages: React.FC<AuthPagesProps> = ({
 
           {mode === 'register' && (
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Account Role</label>
-              <select
-                value={role}
-                onChange={e => setRole(e.target.value as any)}
-                className="w-full p-2.5 rounded-xl border border-slate-200 bg-white"
-              >
-                <option value="student">Student Account</option>
-                <option value="admin">Instructor / Admin Account</option>
-              </select>
+              <label className="flex items-center gap-2 font-bold text-slate-700">
+                <input type="checkbox" checked={requestAdminAccess} onChange={e => setRequestAdminAccess(e.target.checked)} />
+                Request Admin Access
+              </label>
+              <p className="mt-1 text-[11px] text-slate-500">Your account remains a USER until the Super Admin approves your request.</p>
             </div>
           )}
+
+          {requestStatus && <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-3">{requestStatus}</p>}
 
           <button
             type="submit"

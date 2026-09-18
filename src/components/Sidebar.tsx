@@ -55,10 +55,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'admin-subjects', label: 'Manage Subjects', icon: BookOpen },
     { id: 'admin-topics', label: 'Manage Topics', icon: FolderTree },
     { id: 'admin-questions', label: 'Question Bank', icon: ListOrdered },
-    { id: 'admin-tests', label: 'Manage Mock Tests', icon: FileText }
+    { id: 'admin-tests', label: 'Manage Mock Tests', icon: FileText },
+    ...(user.role === 'SUPER_ADMIN' ? [{ id: 'admin-requests', label: 'Admin Requests', icon: UserCheck }] : [])
   ];
 
-  const links = user.role === 'admin' ? adminLinks : studentLinks;
+  const links = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? adminLinks : studentLinks;
 
   return (
     <>
@@ -80,7 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-4 space-y-6">
           <div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-2">
-              {user.role === 'admin' ? 'Administration' : 'Student Portal'}
+              {user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? 'Administration' : 'Student Portal'}
             </p>
             <nav className="space-y-1">
               {links.map(link => {

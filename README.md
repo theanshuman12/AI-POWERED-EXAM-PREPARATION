@@ -46,7 +46,19 @@ npm run build
 npm start
 ```
 
-Configure `JWT_SECRET` and `APP_URL` in the hosting environment. `PORT` is supplied by the hosting platform and defaults to `3000` for local development. `GEMINI_API_KEY` is optional; without it, the built-in curriculum fallback provides explanations and hints. `MONGO_URI` is optional and the current application continues to use its embedded JSON storage when it is unset. The FastAPI service under `ai-service/` is optional because the Node backend falls back to its native recommendation calculation when the Python analyzer is unavailable. The browser uses same-origin `/api` requests, so no frontend API URL is required.
+Configure `JWT_SECRET`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and `APP_URL` in the hosting environment. `SUPER_ADMIN_EMAIL` identifies the single protected owner account server-side, and `SUPER_ADMIN_PASSWORD` is used only when the embedded storage is initialized without an owner account. In production the server refuses to initialize without the required owner settings. `PORT` is supplied by the hosting platform and defaults to `3000` for local development. `GEMINI_API_KEY` is optional; without it, the built-in curriculum fallback provides explanations and hints. `MONGO_URI` is optional and the current application continues to use its embedded JSON storage when it is unset. The FastAPI service under `ai-service/` is optional because the Node backend falls back to its native recommendation calculation when the Python analyzer is unavailable. The browser uses same-origin `/api` requests, so no frontend API URL is required.
+
+### Authentication and Admin Authorization
+
+Users are always registered with the `USER` role. Admin access is requested through `POST /api/admin-requests` and remains pending until the one `SUPER_ADMIN` account approves it. The request owner can check `GET /api/admin-requests/me`; only `SUPER_ADMIN` can call `GET /api/admin-requests` or `PUT /api/admin-requests/:id/approve` and `/reject`. Existing `ADMIN` accounts retain academic administration features but cannot approve requests or change roles. Request reviews and role changes are stored in the embedded JSON `auditLogs` collection.
+
+### Admin Access System
+
+- Normal users register as `USER`.
+- Users can request Admin access.
+- Requests remain `PENDING` until approved.
+- Only `SUPER_ADMIN` can approve or reject requests.
+- Existing `ADMIN` users cannot approve other Admins.
 
 ---
 

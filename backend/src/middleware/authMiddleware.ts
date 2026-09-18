@@ -47,8 +47,16 @@ export const authenticateToken = (req: AuthenticatedRequest, res: Response, next
 };
 
 export const requireAdmin = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  if (!req.user || req.user.role !== 'admin') {
+  if (!req.user || !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
     res.status(403).json({ message: 'Access denied. Administrator privileges required.' });
+    return;
+  }
+  next();
+};
+
+export const requireSuperAdmin = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  if (!req.user || req.user.role !== 'SUPER_ADMIN') {
+    res.status(403).json({ message: 'Access denied. Super Admin privileges required.' });
     return;
   }
   next();

@@ -8,7 +8,8 @@ import {
   TestAttempt,
   PerformanceAnalysisResponse,
   Recommendation,
-  AuthResponse
+  AuthResponse,
+  AdminRequest
 } from '../types';
 
 const API_BASE = '/api';
@@ -64,10 +65,29 @@ class ApiClient {
     });
   }
 
-  register(data: { name: string; email: string; password: string; role?: string }): Promise<AuthResponse> {
+  register(data: { name: string; email: string; password: string }): Promise<AuthResponse> {
     return this.request<AuthResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data)
+    });
+  }
+
+  submitAdminRequest(): Promise<{ request: AdminRequest; message: string }> {
+    return this.request('/admin-requests', { method: 'POST', body: JSON.stringify({}) });
+  }
+
+  getMyAdminRequest(): Promise<{ request: AdminRequest | null }> {
+    return this.request('/admin-requests/me');
+  }
+
+  getAdminRequests(): Promise<{ requests: AdminRequest[] }> {
+    return this.request('/admin-requests');
+  }
+
+  reviewAdminRequest(id: string, action: 'approve' | 'reject', reason?: string): Promise<{ request: AdminRequest; message: string }> {
+    return this.request(`/admin-requests/${id}/${action}`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason })
     });
   }
 

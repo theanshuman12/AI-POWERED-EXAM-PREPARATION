@@ -135,15 +135,15 @@ function MainApp() {
             />
           )}
 
-          {isAuthenticated && user?.role === 'admin' && activeView === 'admin-dashboard' && (
+          {isAuthenticated && (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && activeView === 'admin-dashboard' && (
             <AdminDashboard />
           )}
 
-          {isAuthenticated && user?.role === 'admin' && activeView.startsWith('admin-') && (
-            <AdminDashboard />
+          {isAuthenticated && (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && activeView.startsWith('admin-') && (
+            <AdminDashboard initialTab={activeView === 'admin-requests' ? 'requests' : 'overview'} />
           )}
 
-          {isAuthenticated && (user?.role === 'student' || activeView === 'dashboard') && activeView === 'dashboard' && (
+          {isAuthenticated && (user?.role === 'USER' || activeView === 'dashboard') && activeView === 'dashboard' && (
             <StudentDashboard
               onNavigate={handleNavigate}
               onStartQuiz={handleStartQuiz}

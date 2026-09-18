@@ -19,9 +19,10 @@ import {
 } from 'lucide-react';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 
-export const AdminDashboard: React.FC = () => {
+export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' }> = ({ initialTab = 'overview' }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'questions' | 'subjects' | 'tests'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'questions' | 'subjects' | 'tests' | 'requests'>(initialTab);
+  const [adminRequests, setAdminRequests] = useState<any[]>([]);
   const [students, setStudents] = useState<User[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -60,6 +61,10 @@ export const AdminDashboard: React.FC = () => {
       setTopics(topRes);
       setQuestions(qRes);
       setTests(tRes);
+      if (user?.role === 'SUPER_ADMIN') {
+        const requestRes = await api.getAdminRequests();
+        setAdminRequests(requestRes.requests);
+      }
       if (subRes.length > 0) {
         setNewSubjectId(subRes[0].id);
       }
@@ -75,7 +80,18 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     loadAllAdminData();
-  }, []);
+  }, [user?.role]);
+
+  const reviewRequest = async (id: string, action: 'approve' | 'reject') => {
+    const reason = action === 'reject' ? window.prompt('Reason for rejection (optional):') || undefined : undefined;
+    try {
+      await api.reviewAdminRequest(id, action, reason);
+      const requestRes = await api.getAdminRequests();
+      setAdminRequests(requestRes.requests);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
 
   const handleCreateQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,7 +181,8 @@ export const AdminDashboard: React.FC = () => {
           { id: 'questions', label: `Question Bank (${questions.length})`, icon: ListOrdered },
           { id: 'students', label: `Students (${students.length})`, icon: Users },
           { id: 'subjects', label: `Subjects (${subjects.length})`, icon: BookOpen },
-          { id: 'tests', label: `Mock Tests (${tests.length})`, icon: FileText }
+          { id: 'tests', label: `Mock Tests (${tests.length})`, icon: FileText },
+          ...(user?.role === 'SUPER_ADMIN' ? [{ id: 'requests', label: `Admin Requests (${adminRequests.filter(r => r.status === 'PENDING').length})`, icon: ShieldCheck }] : [])
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -333,13 +350,28 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                  s.role === 'admin' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                  s.role === 'ADMIN' || s.role === 'SUPER_ADMIN' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
                 }`}>
                   {s.role}
                 </span>
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'requests' && user?.role === 'SUPER_ADMIN' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Admin Requests</h3>
+          {adminRequests.map(request => (
+            <div key={request.id} className="py-3 border-b border-slate-100 flex items-center justify-between gap-4">
+              <div><p className="text-xs font-bold text-slate-900">{request.name}</p><p className="text-[11px] text-slate-500">{request.email} · {new Date(request.createdAt).toLocaleString()}</p></div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase text-slate-500">{request.status}</span>
+                {request.status === 'PENDING' && <><button onClick={() => reviewRequest(request.id, 'approve')} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold">Approve</button><button onClick={() => reviewRequest(request.id, 'reject')} className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold">Reject</button></>}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

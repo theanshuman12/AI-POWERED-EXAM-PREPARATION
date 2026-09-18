@@ -1005,7 +1005,7 @@ export const INITIAL_USERS: User[] = [
     id: 'user-student-demo',
     name: 'Student',
     email: 'student@example.com',
-    role: 'student',
+    role: 'USER',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -1013,7 +1013,7 @@ export const INITIAL_USERS: User[] = [
     id: 'user-admin-demo-1',
     name: 'vikram',
     email: 'vikram@example.com',
-    role: 'admin',
+    role: 'ADMIN',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -1021,7 +1021,7 @@ export const INITIAL_USERS: User[] = [
     id: 'user-admin-demo-2',
     name: 'Aisha',
     email: 'aisha.admin@example.com',
-    role: 'admin',
+    role: 'ADMIN',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -1029,7 +1029,7 @@ export const INITIAL_USERS: User[] = [
     id: 'user-admin-demo-3',
     name: 'Nathan',
     email: 'nathan.admin@example.com',
-    role: 'admin',
+    role: 'ADMIN',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -1037,7 +1037,7 @@ export const INITIAL_USERS: User[] = [
     id: 'user-admin-demo-4',
     name: 'Olivia',
     email: 'olivia.admin@example.com',
-    role: 'admin',
+    role: 'ADMIN',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   },
@@ -1045,7 +1045,7 @@ export const INITIAL_USERS: User[] = [
     id: 'user-admin-demo-5',
     name: 'Mason',
     email: 'mason.admin@example.com',
-    role: 'admin',
+    role: 'ADMIN',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }

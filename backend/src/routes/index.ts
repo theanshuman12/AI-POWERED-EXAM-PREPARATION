@@ -7,7 +7,7 @@ import * as testCtrl from '../controllers/testController';
 import * as perfCtrl from '../controllers/performanceController';
 import * as recCtrl from '../controllers/recommendationController';
 import * as aiCtrl from '../controllers/aiExplainerController';
-import { authenticateToken, requireAdmin } from '../middleware/authMiddleware';
+import { authenticateToken, requireAdmin, requireSuperAdmin } from '../middleware/authMiddleware';
 
 const router = Router();
 
@@ -16,6 +16,10 @@ router.post('/auth/register', authCtrl.register);
 router.post('/auth/login', authCtrl.login);
 router.get('/auth/profile', authenticateToken, authCtrl.getProfile);
 router.get('/auth/students', authenticateToken, requireAdmin, authCtrl.getAllStudents);
+router.post('/admin-requests', authenticateToken, authCtrl.submitAdminRequest);
+router.get('/admin-requests/me', authenticateToken, authCtrl.getMyAdminRequest);
+router.get('/admin-requests', authenticateToken, requireSuperAdmin, authCtrl.getAdminRequests);
+router.put('/admin-requests/:id/:action', authenticateToken, requireSuperAdmin, authCtrl.reviewAdminRequest);
 
 // --- Subject Routes ---
 router.get('/subjects', subCtrl.getSubjects);

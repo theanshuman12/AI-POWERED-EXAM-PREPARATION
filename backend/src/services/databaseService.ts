@@ -10,7 +10,9 @@ import {
   Exam,
   TestAttempt,
   QuestionAttempt,
-  Recommendation
+  Recommendation,
+  AdminRequest,
+  AuditLog
 } from '../../types';
 import {
   INITIAL_SUBJECTS,
@@ -37,6 +39,8 @@ interface DatabaseSchema {
   testAttempts: TestAttempt[];
   questionAttempts: QuestionAttempt[];
   recommendations: Recommendation[];
+  adminRequests: AdminRequest[];
+  auditLogs: AuditLog[];
 }
 
 const DB_DIR = path.resolve(process.cwd(), 'database');
@@ -52,7 +56,9 @@ class DatabaseService {
     tests: [],
     testAttempts: [],
     questionAttempts: [],
-    recommendations: []
+    recommendations: [],
+    adminRequests: [],
+    auditLogs: []
   };
 
   private initialized = false;
@@ -70,7 +76,7 @@ class DatabaseService {
       if (fs.existsSync(DB_FILE)) {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         this.data = JSON.parse(raw);
-        this.migrateAcademicCategories();
+        this.migrateSchema();
       } else {
         this.seedInitialData();
       }
@@ -88,8 +94,25 @@ class DatabaseService {
 
     const seededUsers = INITIAL_USERS.map(user => ({
       ...user,
-      passwordHash: user.role === 'student' ? studentHash : adminHash
+      passwordHash: user.role === 'USER' ? studentHash : adminHash
     }));
+
+    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+    const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD;
+    if (process.env.NODE_ENV === 'production' && (!superAdminEmail || !superAdminPassword)) {
+      throw new Error('SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD must be configured when initializing production storage.');
+    }
+    if (superAdminEmail && superAdminPassword) {
+      seededUsers.push({
+        id: 'user-super-admin',
+        name: 'ANSHUMAN MISHRA',
+        email: superAdminEmail,
+        role: 'SUPER_ADMIN',
+        passwordHash: bcrypt.hashSync(superAdminPassword, 10),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
 
     this.data = {
       users: seededUsers,
@@ -100,10 +123,58 @@ class DatabaseService {
       tests: [...INITIAL_TESTS, ...UPPET_REASONING_TESTS, ...UPPET_GENERAL_STUDIES_TESTS],
       testAttempts: [],
       questionAttempts: [],
-      recommendations: []
+      recommendations: [],
+      adminRequests: [],
+      auditLogs: []
     };
 
     this.persist();
+  }
+
+  private migrateSchema() {
+    let changed = false;
+    this.data.adminRequests ??= [];
+    this.data.auditLogs ??= [];
+    for (const user of this.data.users) {
+      const rawRole = String(user.role);
+      const migratedRole = rawRole === 'student' ? 'USER' : rawRole === 'admin' ? 'ADMIN' : user.role;
+      if (user.role !== migratedRole) {
+        user.role = migratedRole;
+        changed = true;
+      }
+    }
+
+    const configuredSuperAdminEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+    if (process.env.NODE_ENV === 'production' && !configuredSuperAdminEmail) {
+      throw new Error('SUPER_ADMIN_EMAIL must be configured in production.');
+    }
+    if (configuredSuperAdminEmail) {
+      const superAdmin = this.data.users.find(user => user.email.toLowerCase() === configuredSuperAdminEmail);
+      if (superAdmin && superAdmin.role !== 'SUPER_ADMIN') {
+        superAdmin.role = 'SUPER_ADMIN';
+        superAdmin.updatedAt = new Date().toISOString();
+        changed = true;
+      }
+      if (!superAdmin) {
+        const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD;
+        if (!superAdminPassword) {
+          throw new Error('SUPER_ADMIN_PASSWORD is required to bootstrap the configured Super Admin account.');
+        }
+        this.data.users.push({
+          id: 'user-super-admin',
+          name: 'ANSHUMAN MISHRA',
+          email: configuredSuperAdminEmail,
+          role: 'SUPER_ADMIN',
+          passwordHash: bcrypt.hashSync(superAdminPassword, 10),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        changed = true;
+      }
+    }
+
+    if (changed) this.persist();
+    this.migrateAcademicCategories();
   }
 
   private migrateAcademicCategories() {
@@ -192,7 +263,7 @@ class DatabaseService {
     return safeUser;
   }
 
-  public createUser(userData: { name: string; email: string; password: string; role?: 'student' | 'admin' }) {
+  public createUser(userData: { name: string; email: string; password: string; role?: 'USER' }) {
     const existing = this.findUserByEmail(userData.email);
     if (existing) throw new Error('A user with this email address already exists.');
 
@@ -201,7 +272,7 @@ class DatabaseService {
       id: 'usr-' + Math.random().toString(36).substring(2, 9),
       name: userData.name,
       email: userData.email,
-      role: userData.role || 'student',
+      role: 'USER',
       passwordHash,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -225,6 +296,64 @@ class DatabaseService {
 
   public getAllUsers() {
     return this.data.users.map(({ passwordHash, ...u }) => u);
+  }
+
+  public createAdminRequest(userId: string): AdminRequest {
+    const user = this.data.users.find(candidate => candidate.id === userId);
+    if (!user) throw new Error('User not found.');
+    const existingPending = this.data.adminRequests.find(request => request.userId === userId && request.status === 'PENDING');
+    if (existingPending) return existingPending;
+    const request: AdminRequest = {
+      id: 'admin-request-' + Math.random().toString(36).substring(2, 9),
+      userId,
+      name: user.name,
+      email: user.email,
+      requestedRole: 'ADMIN',
+      status: 'PENDING',
+      createdAt: new Date().toISOString()
+    };
+    this.data.adminRequests.push(request);
+    this.addAuditLog({ actorId: userId, action: 'ADMIN_REQUEST_SUBMITTED', targetUserId: userId, requestId: request.id });
+    this.persist();
+    return request;
+  }
+
+  public getAdminRequests(): AdminRequest[] {
+    return [...this.data.adminRequests].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  public getAdminRequestForUser(userId: string): AdminRequest | undefined {
+    return this.getAdminRequests().find(request => request.userId === userId);
+  }
+
+  public reviewAdminRequest(requestId: string, reviewerId: string, approve: boolean, reason?: string): AdminRequest | null {
+    const request = this.data.adminRequests.find(candidate => candidate.id === requestId);
+    if (!request || request.status !== 'PENDING') return null;
+    const user = this.data.users.find(candidate => candidate.id === request.userId);
+    if (!user) return null;
+    const now = new Date().toISOString();
+    request.status = approve ? 'APPROVED' : 'REJECTED';
+    request.reviewedAt = now;
+    request.reviewedBy = reviewerId;
+    request.reason = reason?.trim() || undefined;
+    if (approve) {
+      user.role = 'ADMIN';
+      user.updatedAt = now;
+      this.addAuditLog({ actorId: reviewerId, action: 'ROLE_CHANGED', targetUserId: user.id, requestId: request.id, details: 'USER to ADMIN' });
+    }
+    this.addAuditLog({
+      actorId: reviewerId,
+      action: approve ? 'ADMIN_REQUEST_APPROVED' : 'ADMIN_REQUEST_REJECTED',
+      targetUserId: user.id,
+      requestId: request.id,
+      details: request.reason
+    });
+    this.persist();
+    return request;
+  }
+
+  private addAuditLog(log: Omit<AuditLog, 'id' | 'timestamp'>) {
+    this.data.auditLogs.push({ ...log, id: 'audit-' + Math.random().toString(36).substring(2, 9), timestamp: new Date().toISOString() });
   }
 
   // --- Subject Operations ---

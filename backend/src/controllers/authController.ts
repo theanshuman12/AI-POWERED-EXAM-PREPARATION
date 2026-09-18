@@ -4,7 +4,7 @@ import { generateToken, AuthenticatedRequest } from '../middleware/authMiddlewar
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
     if (!name || !email || !password) {
       res.status(400).json({ message: 'Name, email, and password are required fields.' });
       return;
@@ -25,7 +25,7 @@ export const register = async (req: Request, res: Response) => {
       name,
       email,
       password,
-      role: role === 'admin' ? 'admin' : 'student'
+      role: 'USER'
     });
 
     const token = generateToken(newUser);
@@ -75,4 +75,51 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response) => {
 export const getAllStudents = async (req: AuthenticatedRequest, res: Response) => {
   const users = db.getAllUsers();
   res.status(200).json({ users });
+};
+
+export const submitAdminRequest = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ message: 'User not authenticated.' });
+    return;
+  }
+  if (req.user.role !== 'USER') {
+    res.status(403).json({ message: 'Only normal users can request Admin access.' });
+    return;
+  }
+  try {
+    const request = db.createAdminRequest(req.user.id);
+    res.status(201).json({ request, message: 'Admin request submitted successfully.' });
+  } catch (err: any) {
+    res.status(400).json({ message: err.message || 'Unable to submit Admin request.' });
+  }
+};
+
+export const getMyAdminRequest = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ message: 'User not authenticated.' });
+    return;
+  }
+  res.status(200).json({ request: db.getAdminRequestForUser(req.user.id) || null });
+};
+
+export const getAdminRequests = async (_req: AuthenticatedRequest, res: Response) => {
+  res.status(200).json({ requests: db.getAdminRequests() });
+};
+
+export const reviewAdminRequest = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401).json({ message: 'User not authenticated.' });
+    return;
+  }
+  const approve = req.params.action === 'approve';
+  if (req.params.action !== 'approve' && req.params.action !== 'reject') {
+    res.status(400).json({ message: 'Action must be approve or reject.' });
+    return;
+  }
+  const request = db.reviewAdminRequest(req.params.id, req.user.id, approve, req.body?.reason);
+  if (!request) {
+    res.status(404).json({ message: 'Pending Admin request not found.' });
+    return;
+  }
+  res.status(200).json({ request, message: `Admin request ${approve ? 'approved' : 'rejected'}.` });
 };

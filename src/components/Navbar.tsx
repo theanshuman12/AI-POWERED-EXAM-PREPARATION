@@ -38,7 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <div
             id="app-logo-badge"
-            onClick={() => setActiveView(user?.role === 'admin' ? 'admin-dashboard' : 'dashboard')}
+            onClick={() => setActiveView(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' ? 'admin-dashboard' : 'dashboard')}
             className="flex items-center space-x-2.5 cursor-pointer group"
           >
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white shadow-sm group-hover:scale-105 transition-transform">
@@ -69,7 +69,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           ) : (
             <div className="flex items-center space-x-3">
               {/* Quick AI Recommendations button */}
-              {user.role === 'student' && (
+              {user.role === 'USER' && (
                 <button
                   id="nav-ai-rec-quick-btn"
                   onClick={() => setActiveView('recommendations')}
@@ -93,7 +93,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <div className="hidden sm:block">
                     <p className="text-xs font-bold text-slate-900 leading-tight">{user.name}</p>
                     <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
-                      user.role === 'admin' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                      user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
                     }`}>
                       {user.role}
                     </span>

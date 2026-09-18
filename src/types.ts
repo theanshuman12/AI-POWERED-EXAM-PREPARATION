@@ -1,4 +1,29 @@
-export type Role = 'student' | 'admin';
+export type Role = 'USER' | 'ADMIN' | 'SUPER_ADMIN';
+
+export type AdminRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface AdminRequest {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  requestedRole: 'ADMIN';
+  status: AdminRequestStatus;
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reason?: string;
+}
+
+export interface AuditLog {
+  id: string;
+  actorId: string;
+  action: 'ADMIN_REQUEST_SUBMITTED' | 'ADMIN_REQUEST_APPROVED' | 'ADMIN_REQUEST_REJECTED' | 'ROLE_CHANGED';
+  targetUserId: string;
+  requestId?: string;
+  timestamp: string;
+  details?: string;
+}
 
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
 

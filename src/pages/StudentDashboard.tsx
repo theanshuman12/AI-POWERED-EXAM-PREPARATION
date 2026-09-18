@@ -35,6 +35,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [analysis, setAnalysis] = useState<PerformanceAnalysisResponse | null>(null);
   const [recentAttempts, setRecentAttempts] = useState<TestAttempt[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [adminRequest, setAdminRequest] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -49,6 +50,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         setAnalysis(perfRes);
         setRecentAttempts(perfRes.attempts ? perfRes.attempts.slice(0, 5) : []);
         setSubjects(subRes.slice(0, 4));
+        const requestRes = await api.getMyAdminRequest();
+        setAdminRequest(requestRes.request);
       } catch (err) {
         console.error('Failed to load student dashboard:', err);
       } finally {
@@ -102,6 +105,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           </button>
         </div>
       </div>
+
+      {adminRequest && (
+        <div className={`rounded-2xl p-4 border text-xs ${adminRequest.status === 'REJECTED' ? 'bg-rose-50 border-rose-200 text-rose-800' : adminRequest.status === 'APPROVED' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+          <strong>Admin access: {adminRequest.status === 'PENDING' ? 'Admin approval pending.' : adminRequest.status}</strong>
+          {adminRequest.reason && <span> {adminRequest.reason}</span>}
+        </div>
+      )}
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
