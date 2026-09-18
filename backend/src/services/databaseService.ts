@@ -497,6 +497,11 @@ class DatabaseService {
     return [...this.data.auditLogs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
 
+  public recordAuditLog(log: Omit<AuditLog, 'id' | 'timestamp'>) {
+    this.addAuditLog(log);
+    this.persist();
+  }
+
   private addAuditLog(log: Omit<AuditLog, 'id' | 'timestamp'>) {
     this.data.auditLogs.push({ ...log, id: 'audit-' + Math.random().toString(36).substring(2, 9), timestamp: new Date().toISOString() });
   }
@@ -689,6 +694,28 @@ class DatabaseService {
     return this.data.testAttempts
       .filter(a => a.studentId === studentId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  public getAllAttempts(): TestAttempt[] {
+    return [...this.data.testAttempts].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  public getAttemptById(attemptId: string): TestAttempt | undefined {
+    return this.data.testAttempts.find(attempt => attempt.id === attemptId);
+  }
+
+  public getUsersByRole(role?: User['role']): User[] {
+    return this.data.users
+      .filter(user => !role || user.role === role)
+      .map(({ passwordHash, ...user }) => user);
+  }
+
+  public updateTestStatus(testId: string, status: 'ACTIVE' | 'INACTIVE'): Test | null {
+    const test = this.data.tests.find(candidate => candidate.id === testId);
+    if (!test) return null;
+    test.status = status;
+    this.persist();
+    return test;
   }
 
   public getStudentQuestionAttempts(studentId: string): QuestionAttempt[] {

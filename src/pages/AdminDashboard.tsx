@@ -39,9 +39,9 @@ const RequestList: React.FC<{
   </div>
 );
 
-export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' | 'student-requests' | 'password-resets' | 'users' | 'audit' }> = ({ initialTab = 'overview' }) => {
+export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'monitoring' | 'requests' | 'student-requests' | 'password-resets' | 'users' | 'audit' }> = ({ initialTab = 'overview' }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'questions' | 'subjects' | 'tests' | 'requests' | 'student-requests' | 'password-resets' | 'users' | 'audit'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'overview' | 'monitoring' | 'students' | 'questions' | 'subjects' | 'tests' | 'requests' | 'student-requests' | 'password-resets' | 'users' | 'audit'>(initialTab);
   const [adminRequests, setAdminRequests] = useState<any[]>([]);
   const [studentRequests, setStudentRequests] = useState<any[]>([]);
   const [passwordResetRequests, setPasswordResetRequests] = useState<any[]>([]);
@@ -49,6 +49,13 @@ export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' | '
   const [passwordResetRequest, setPasswordResetRequest] = useState<any>(null);
   const [suspendingUserId, setSuspendingUserId] = useState<string | null>(null);
   const [userManagementError, setUserManagementError] = useState<string | null>(null);
+  const [platformStats, setPlatformStats] = useState<any>(null);
+  const [monitoringStudents, setMonitoringStudents] = useState<any[]>([]);
+  const [studentSearch, setStudentSearch] = useState<string>('');
+  const [studentStatusFilter, setStudentStatusFilter] = useState<string>('');
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [selectedAttempt, setSelectedAttempt] = useState<any>(null);
+  const [mockTests, setMockTests] = useState<any[]>([]);
   const [students, setStudents] = useState<User[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -88,16 +95,22 @@ export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' | '
       setQuestions(qRes);
       setTests(tRes);
       if (user?.role === 'SUPER_ADMIN') {
-        const [requestRes, studentRequestRes, resetRequestRes, auditRes] = await Promise.all([
+        const [requestRes, studentRequestRes, resetRequestRes, auditRes, dashboardRes, studentRes, mockTestRes] = await Promise.all([
           api.getAdminRequests(),
           api.getStudentRegistrationRequests(),
           api.getPasswordResetRequests(),
-          api.getAuditLogs()
+          api.getAuditLogs(),
+          api.getSuperAdminDashboard(),
+          api.getSuperAdminStudents(),
+          api.getSuperAdminMockTests()
         ]);
         setAdminRequests(requestRes.requests);
         setStudentRequests(studentRequestRes.requests);
         setPasswordResetRequests(resetRequestRes.requests);
         setAuditLogs(auditRes.logs);
+        setPlatformStats(dashboardRes);
+        setMonitoringStudents(studentRes.students);
+        setMockTests(mockTestRes.tests);
       } else if (user?.role === 'ADMIN') {
         const resetRequestRes = await api.getMyPasswordResetRequest();
         setPasswordResetRequest(resetRequestRes.request);
@@ -118,6 +131,28 @@ export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' | '
   useEffect(() => {
     loadAllAdminData();
   }, [user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== 'SUPER_ADMIN') return;
+    const timer = window.setTimeout(async () => {
+      const response = await api.getSuperAdminStudents({ search: studentSearch, status: studentStatusFilter });
+      setMonitoringStudents(response.students);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [studentSearch, studentStatusFilter, user?.role]);
+
+  const openStudentDetails = async (id: string) => {
+    setSelectedStudent(await api.getSuperAdminStudent(id));
+  };
+
+  const toggleMockTest = async (test: any) => {
+    const response = await api.updateMockTestStatus(test.id, test.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE');
+    setMockTests(current => current.map(item => item.id === test.id ? { ...item, ...response.test } : item));
+  };
+
+  const openAttemptDetails = async (studentId: string, attemptId: string) => {
+    setSelectedAttempt(await api.getSuperAdminAttempt(studentId, attemptId));
+  };
 
   const reviewRequest = async (id: string, action: 'approve' | 'reject') => {
     const reason = action === 'reject' ? window.prompt('Reason for rejection (optional):') || undefined : undefined;
@@ -248,6 +283,7 @@ export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' | '
           { id: 'subjects', label: `Subjects (${subjects.length})`, icon: BookOpen },
           { id: 'tests', label: `Mock Tests (${tests.length})`, icon: FileText },
           ...(user?.role === 'SUPER_ADMIN' ? [
+            { id: 'monitoring', label: 'Super Admin Dashboard', icon: ShieldCheck },
             { id: 'student-requests', label: `Student Requests (${studentRequests.filter(r => r.status === 'PENDING').length})`, icon: UserCheck },
             { id: 'requests', label: `Admin Requests (${adminRequests.filter(r => r.status === 'PENDING').length})`, icon: ShieldCheck },
             { id: 'password-resets', label: `Password Resets (${passwordResetRequests.filter(r => r.status === 'PENDING').length})`, icon: LockKeyhole },
@@ -321,6 +357,38 @@ export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' | '
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'monitoring' && user?.role === 'SUPER_ADMIN' && platformStats && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              ['Students', platformStats.students.total],
+              ['Active Students', platformStats.students.active],
+              ['Suspended Students', platformStats.students.suspended],
+              ['Pending Students', platformStats.students.pending],
+              ['Admins', platformStats.admins.total],
+              ['Mock Tests', platformStats.totalMockTests],
+              ['Questions', platformStats.totalQuestions],
+              ['Test Attempts', platformStats.totalTestAttempts],
+              ['Average Score', `${platformStats.averagePlatformScore}%`],
+              ['Average Accuracy', `${platformStats.averagePlatformAccuracy}%`]
+            ].map(([label, value]) => <div key={String(label)} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs"><p className="text-xs font-semibold text-slate-500">{label}</p><p className="text-2xl font-black text-slate-900">{value}</p></div>)}
+          </div>
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+            <div className="flex flex-col md:flex-row gap-3 justify-between"><h3 className="text-sm font-bold uppercase tracking-wider">Student Management</h3><div className="flex gap-2"><input value={studentSearch} onChange={e => setStudentSearch(e.target.value)} placeholder="Search name or email" className="px-3 py-2 rounded-lg border border-slate-200 text-xs" /><select value={studentStatusFilter} onChange={e => setStudentStatusFilter(e.target.value)} className="px-3 py-2 rounded-lg border border-slate-200 text-xs"><option value="">All statuses</option><option value="ACTIVE">Active</option><option value="SUSPENDED">Suspended</option><option value="PENDING">Pending</option></select></div></div>
+            {monitoringStudents.map(student => <div key={student.id} className="py-3 border-b border-slate-100 flex items-center justify-between gap-4"><div><p className="text-xs font-bold">{student.name}</p><p className="text-[11px] text-slate-500">{student.email} · {student.status} · {student.testsAttempted} tests · {student.averageScore}% avg</p></div><button onClick={() => openStudentDetails(student.id)} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold">View Details</button></div>)}
+          </div>
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4"><h3 className="text-sm font-bold uppercase tracking-wider">Mock Test Management</h3>{mockTests.map(test => <div key={test.id} className="py-3 border-b border-slate-100 flex items-center justify-between gap-4"><div><p className="text-xs font-bold">{test.title}</p><p className="text-[11px] text-slate-500">{test.questions.length} questions · {test.totalAttempts} attempts · {test.averageScore}% avg score · {test.averageAccuracy}% accuracy</p></div><button onClick={() => toggleMockTest(test)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-bold">{test.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</button></div>)}</div>
+        </div>
+      )}
+
+      {selectedStudent && user?.role === 'SUPER_ADMIN' && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4"><div className="bg-white rounded-3xl max-w-5xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-5"><div className="flex justify-between"><div><h2 className="text-xl font-black">{selectedStudent.student.name}</h2><p className="text-xs text-slate-500">{selectedStudent.student.email} · {selectedStudent.student.status}</p></div><button onClick={() => setSelectedStudent(null)} className="text-sm font-bold">Close</button></div><div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{Object.entries(selectedStudent.performance).slice(0, 8).map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 p-3"><p className="text-[10px] uppercase text-slate-500">{label}</p><p className="text-lg font-bold">{String(value)}</p></div>)}</div><h3 className="text-sm font-bold uppercase">Mock Test History</h3>{selectedStudent.attempts.length ? selectedStudent.attempts.map((attempt: any) => <button key={attempt.id} type="button" onClick={() => openAttemptDetails(selectedStudent.student.id, attempt.id)} className="w-full py-2 border-b border-slate-100 text-xs flex justify-between text-left hover:bg-slate-50"><span>{attempt.title}</span><span>{attempt.score}% · {attempt.accuracy}% accuracy · {new Date(attempt.createdAt).toLocaleString()}</span></button>) : <p className="text-xs text-slate-500">No data available.</p>}</div></div>
+      )}
+
+      {selectedAttempt && user?.role === 'SUPER_ADMIN' && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/60 flex items-center justify-center p-4"><div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-4"><div className="flex justify-between"><h2 className="text-lg font-black">{selectedAttempt.attempt.title}</h2><button onClick={() => setSelectedAttempt(null)} className="font-bold text-sm">Close</button></div><div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">{[['Score', `${selectedAttempt.attempt.score}%`], ['Accuracy', `${selectedAttempt.attempt.accuracy}%`], ['Correct', selectedAttempt.attempt.correctAnswers], ['Incorrect', selectedAttempt.attempt.incorrectAnswers], ['Unanswered', selectedAttempt.attempt.unattempted], ['Time', `${selectedAttempt.attempt.timeTaken}s`]].map(([label, value]) => <div key={String(label)} className="bg-slate-50 rounded-xl p-3"><p className="text-slate-500">{label}</p><strong>{String(value)}</strong></div>)}</div><h3 className="text-sm font-bold uppercase">Question Details</h3>{selectedAttempt.questionDetails?.map((question: any, index: number) => <div key={question.id} className="border-b border-slate-100 py-3 text-xs"><p className="font-bold">Question {index + 1}: {question.question}</p><p>Student answer: {question.selectedAnswer < 0 ? 'Unanswered' : question.options[question.selectedAnswer] || question.selectedAnswer}</p><p>Correct answer: {question.options[question.correctAnswer] || question.correctAnswer}</p><p className={question.correct ? 'text-emerald-700' : question.selectedAnswer < 0 ? 'text-amber-700' : 'text-rose-700'}>{question.selectedAnswer < 0 ? 'Unanswered' : question.correct ? 'Correct' : 'Incorrect'}</p></div>)}</div></div>
       )}
 
       {/* Tab 2: Question Bank */}
@@ -420,11 +488,22 @@ export const AdminDashboard: React.FC<{ initialTab?: 'overview' | 'requests' | '
                     <span className="text-[11px] text-slate-500">{s.email}</span>
                   </div>
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                  s.role === 'ADMIN' || s.role === 'SUPER_ADMIN' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                }`}>
-                  {s.role}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                    s.role === 'ADMIN' || s.role === 'SUPER_ADMIN' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {s.role}
+                  </span>
+                  {user?.role === 'SUPER_ADMIN' && s.role === 'USER' && (
+                    <button
+                      type="button"
+                      onClick={() => openStudentDetails(s.id)}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[11px] font-bold hover:bg-blue-700"
+                    >
+                      View Details
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

@@ -13,7 +13,8 @@ import {
   ListOrdered,
   Users,
   BrainCircuit,
-  Info
+  Info,
+  ShieldCheck
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -57,6 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'admin-questions', label: 'Question Bank', icon: ListOrdered },
     { id: 'admin-tests', label: 'Manage Mock Tests', icon: FileText },
     ...(user.role === 'SUPER_ADMIN' ? [
+      { id: 'admin-monitoring', label: 'Super Admin Dashboard', icon: ShieldCheck },
       { id: 'admin-student-requests', label: 'Student Registration Requests', icon: UserCheck },
       { id: 'admin-requests', label: 'Admin Requests', icon: UserCheck },
       { id: 'admin-password-resets', label: 'Password Reset Requests', icon: UserCheck },

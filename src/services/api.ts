@@ -132,6 +132,35 @@ class ApiClient {
     return this.request('/super-admin/audit-logs');
   }
 
+  getSuperAdminDashboard(): Promise<any> {
+    return this.request('/super-admin/dashboard');
+  }
+
+  getSuperAdminStudents(params?: { search?: string; status?: string; page?: number; limit?: number }): Promise<{ students: User[]; total: number; page: number; limit: number }> {
+    const query = new URLSearchParams();
+    if (params?.search) query.set('search', params.search);
+    if (params?.status) query.set('status', params.status);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    return this.request(`/super-admin/students?${query.toString()}`);
+  }
+
+  getSuperAdminStudent(id: string): Promise<any> {
+    return this.request(`/super-admin/students/${id}`);
+  }
+
+  getSuperAdminAttempt(studentId: string, attemptId: string): Promise<any> {
+    return this.request(`/super-admin/students/${studentId}/attempts/${attemptId}`);
+  }
+
+  getSuperAdminMockTests(): Promise<{ tests: any[] }> {
+    return this.request('/super-admin/mock-tests');
+  }
+
+  updateMockTestStatus(id: string, status: 'ACTIVE' | 'INACTIVE'): Promise<{ test: Test }> {
+    return this.request(`/super-admin/mock-tests/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) });
+  }
+
   getProfile(): Promise<{ user: User }> {
     return this.request<{ user: User }>('/auth/profile');
   }

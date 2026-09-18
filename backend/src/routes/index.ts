@@ -7,6 +7,7 @@ import * as testCtrl from '../controllers/testController';
 import * as perfCtrl from '../controllers/performanceController';
 import * as recCtrl from '../controllers/recommendationController';
 import * as aiCtrl from '../controllers/aiExplainerController';
+import * as superAdminCtrl from '../controllers/superAdminController';
 import { authenticateToken, requireAdmin, requireSuperAdmin } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -29,6 +30,15 @@ router.get('/super-admin/password-reset-requests', authenticateToken, requireSup
 router.post('/super-admin/password-reset-requests/:id/:action', authenticateToken, requireSuperAdmin, authCtrl.reviewPasswordReset);
 router.get('/super-admin/audit-logs', authenticateToken, requireSuperAdmin, authCtrl.getAuditLogs);
 router.post('/super-admin/users/:id/:action', authenticateToken, requireSuperAdmin, authCtrl.updateUserSuspension);
+router.get('/super-admin/dashboard', authenticateToken, requireSuperAdmin, superAdminCtrl.getDashboard);
+router.get('/super-admin/students', authenticateToken, requireSuperAdmin, superAdminCtrl.getStudents);
+router.get('/super-admin/students/:id', authenticateToken, requireSuperAdmin, superAdminCtrl.getStudentDetails);
+router.get('/super-admin/students/:id/attempts', authenticateToken, requireSuperAdmin, superAdminCtrl.getStudentAttempts);
+router.get('/super-admin/students/:id/attempts/:attemptId', authenticateToken, requireSuperAdmin, superAdminCtrl.getAttemptDetails);
+router.get('/super-admin/analytics', authenticateToken, requireSuperAdmin, superAdminCtrl.getAnalytics);
+router.get('/super-admin/mock-tests', authenticateToken, requireSuperAdmin, superAdminCtrl.getMockTests);
+router.get('/super-admin/mock-tests/:id/analytics', authenticateToken, requireSuperAdmin, superAdminCtrl.getMockTestAnalytics);
+router.put('/super-admin/mock-tests/:id/status', authenticateToken, requireSuperAdmin, superAdminCtrl.updateMockTestStatus);
 
 // --- Subject Routes ---
 router.get('/subjects', subCtrl.getSubjects);

@@ -140,7 +140,7 @@ function MainApp() {
           )}
 
           {isAuthenticated && (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && activeView.startsWith('admin-') && (
-            <AdminDashboard initialTab={activeView === 'admin-requests' ? 'requests' : activeView === 'admin-student-requests' ? 'student-requests' : activeView === 'admin-password-resets' ? 'password-resets' : activeView === 'admin-users' ? 'users' : activeView === 'admin-audit' ? 'audit' : 'overview'} />
+            <AdminDashboard initialTab={activeView === 'admin-monitoring' ? 'monitoring' : activeView === 'admin-requests' ? 'requests' : activeView === 'admin-student-requests' ? 'student-requests' : activeView === 'admin-password-resets' ? 'password-resets' : activeView === 'admin-users' ? 'users' : activeView === 'admin-audit' ? 'audit' : 'overview'} />
           )}
 
           {isAuthenticated && (user?.role === 'USER' || activeView === 'dashboard') && activeView === 'dashboard' && (

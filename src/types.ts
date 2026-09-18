@@ -23,7 +23,12 @@ export type AuditAction =
   | 'USER_UNSUSPENDED'
   | 'ADMIN_SUSPENDED'
   | 'ADMIN_UNSUSPENDED'
-  | 'ROLE_CHANGED';
+  | 'ROLE_CHANGED'
+  | 'STUDENT_PROFILE_VIEWED'
+  | 'STUDENT_PROGRESS_VIEWED'
+  | 'TEST_RESULT_VIEWED'
+  | 'MOCK_ANALYTICS_VIEWED'
+  | 'MOCK_STATUS_CHANGED';
 
 export interface AdminRequest {
   id: string;
@@ -56,6 +61,8 @@ export interface AuditLog {
 }
 
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
+
+export type TestStatus = 'ACTIVE' | 'INACTIVE';
 
 export type PerformanceLevel = 'Weak' | 'Moderate' | 'Strong';
 
@@ -113,6 +120,7 @@ export interface Test {
   questions: string[]; // Question IDs
   duration: number; // in minutes
   difficulty: Difficulty;
+  status?: TestStatus;
   createdAt?: string;
 }
 
