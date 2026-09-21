@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import { Collection, Db, MongoClient } from 'mongodb';
 import {
   User,
   Subject,
@@ -47,8 +48,44 @@ interface DatabaseSchema {
   auditLogs: AuditLog[];
 }
 
-const DB_DIR = path.resolve(process.cwd(), 'database');
-const DB_FILE = path.join(DB_DIR, 'storage.json');
+type StateCollection = keyof DatabaseSchema;
+type PersistedDocument = { id: string; [key: string]: unknown };
+type MongoStoredDocument = PersistedDocument & { _id: string };
+
+const STATE_COLLECTIONS: StateCollection[] = [
+  'users',
+  'exams',
+  'subjects',
+  'topics',
+  'questions',
+  'tests',
+  'testAttempts',
+  'questionAttempts',
+  'recommendations',
+  'adminRequests',
+  'auditLogs'
+];
+
+const MONGO_COLLECTION_NAMES: Record<StateCollection, string> = {
+  users: 'users',
+  exams: 'exams',
+  subjects: 'subjects',
+  topics: 'topics',
+  questions: 'questions',
+  tests: 'tests',
+  testAttempts: 'test_attempts',
+  questionAttempts: 'question_attempts',
+  recommendations: 'recommendations',
+  adminRequests: 'admin_requests',
+  auditLogs: 'audit_logs'
+};
+
+const configuredDatabaseFile = process.env.DATABASE_FILE?.trim();
+const MONGODB_URI = process.env.MONGODB_URI?.trim();
+const DB_FILE = configuredDatabaseFile
+  ? path.resolve(configuredDatabaseFile)
+  : path.resolve(process.cwd(), 'database', 'storage.json');
+const DB_DIR = path.dirname(DB_FILE);
 
 class DatabaseService {
   private data: DatabaseSchema = {
@@ -66,20 +103,38 @@ class DatabaseService {
   };
 
   private initialized = false;
+  private mongoDb?: Db;
+  private mongoClient?: MongoClient;
+  private persistQueue: Promise<void> = Promise.resolve();
+  private persistenceError?: Error;
+  public readonly ready: Promise<void>;
 
   constructor() {
-    this.init();
+    if (process.env.NODE_ENV === 'production' && !MONGODB_URI) {
+      this.ready = Promise.reject(new Error('MONGODB_URI must be configured in production.'));
+    } else {
+      this.ready = MONGODB_URI ? this.initMongo() : Promise.resolve(this.initLocal());
+    }
   }
 
-  private init() {
+  public get isAvailable(): boolean {
+    return !this.persistenceError;
+  }
+
+  private initLocal() {
     try {
+      console.log(`Using database storage file: ${DB_FILE}`);
+      if (process.env.NODE_ENV === 'production' && !configuredDatabaseFile) {
+        console.warn('DATABASE_FILE is not configured; production data will be stored on the service filesystem and may be lost on restart.');
+      }
+
       if (!fs.existsSync(DB_DIR)) {
         fs.mkdirSync(DB_DIR, { recursive: true });
       }
 
       if (fs.existsSync(DB_FILE)) {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        this.data = JSON.parse(raw);
+        this.data = this.normalizeSchema(JSON.parse(raw));
         this.migrateSchema();
       } else {
         this.seedInitialData();
@@ -89,6 +144,85 @@ class DatabaseService {
       console.error('Error initializing database storage:', err);
       this.seedInitialData();
     }
+  }
+
+  private async initMongo() {
+    try {
+      this.mongoClient = new MongoClient(MONGODB_URI!);
+      await this.mongoClient.connect();
+      this.mongoDb = this.mongoClient.db();
+      await this.createMongoIndexes();
+
+      const hasPersistedData = (await Promise.all(STATE_COLLECTIONS.map(key =>
+        this.mongoDb!.collection(MONGO_COLLECTION_NAMES[key]).countDocuments({}, { limit: 1 })
+      ))).some(count => count > 0);
+      if (hasPersistedData) {
+        this.data = await this.loadMongoState();
+        this.migrateSchema();
+        await this.flush();
+      } else {
+        const legacyState = await this.mongoDb.collection<DatabaseSchema & { _id: string }>('application_state').findOne({ _id: 'main' });
+        if (legacyState) {
+          const { _id, ...legacyData } = legacyState;
+          this.data = this.normalizeSchema(legacyData);
+          this.migrateSchema();
+          // Preserve the legacy document and copy it into the collection-based layout.
+          this.persist();
+        } else {
+          this.seedInitialData();
+        }
+        await this.flush();
+      }
+
+      this.initialized = true;
+      console.log('Using MongoDB persistent collections.');
+    } catch (err) {
+      console.error('MongoDB initialization failed. Check the private MONGODB_URI setting and Atlas network access.');
+      await this.mongoClient?.close().catch(() => undefined);
+      this.mongoClient = undefined;
+      this.mongoDb = undefined;
+      throw new Error('MongoDB is configured but could not be initialized. Refusing to fall back to local storage.');
+    }
+  }
+
+  private normalizeSchema(data: Partial<DatabaseSchema>): DatabaseSchema {
+    return {
+      users: data.users ?? [],
+      exams: data.exams ?? [],
+      subjects: data.subjects ?? [],
+      topics: data.topics ?? [],
+      questions: data.questions ?? [],
+      tests: data.tests ?? [],
+      testAttempts: data.testAttempts ?? [],
+      questionAttempts: data.questionAttempts ?? [],
+      recommendations: data.recommendations ?? [],
+      adminRequests: data.adminRequests ?? [],
+      auditLogs: data.auditLogs ?? []
+    };
+  }
+
+  private async createMongoIndexes() {
+    if (!this.mongoDb) return;
+    await Promise.all([
+      this.mongoDb.collection(MONGO_COLLECTION_NAMES.users).createIndex({ email: 1 }, { unique: true }),
+      this.mongoDb.collection(MONGO_COLLECTION_NAMES.testAttempts).createIndex({ studentId: 1, createdAt: -1 }),
+      this.mongoDb.collection(MONGO_COLLECTION_NAMES.questionAttempts).createIndex({ studentId: 1, createdAt: -1 }),
+      this.mongoDb.collection(MONGO_COLLECTION_NAMES.recommendations).createIndex({ studentId: 1 }),
+      this.mongoDb.collection(MONGO_COLLECTION_NAMES.adminRequests).createIndex({ userId: 1, createdAt: -1 }),
+      this.mongoDb.collection(MONGO_COLLECTION_NAMES.auditLogs).createIndex({ timestamp: -1 })
+    ]);
+  }
+
+  private async loadMongoState(): Promise<DatabaseSchema> {
+    if (!this.mongoDb) throw new Error('MongoDB has not been initialized.');
+    const entries = await Promise.all(STATE_COLLECTIONS.map(async key => {
+      const documents = await this.mongoDb!
+        .collection(MONGO_COLLECTION_NAMES[key])
+        .find({}, { projection: { _id: 0 } })
+        .toArray();
+      return [key, documents] as const;
+    }));
+    return this.normalizeSchema(Object.fromEntries(entries) as Partial<DatabaseSchema>);
   }
 
   private seedInitialData() {
@@ -201,7 +335,7 @@ class DatabaseService {
       }
     }
 
-    if (changed) this.persist();
+    if (changed) this.persist('users', 'adminRequests');
     this.migrateAcademicCategories();
   }
 
@@ -283,10 +417,55 @@ class DatabaseService {
         changed = true;
       }
     }
-    if (changed) this.persist();
+    if (changed) this.persist('exams', 'subjects', 'topics', 'questions', 'tests');
   }
 
-  public persist() {
+  public persist(...collections: StateCollection[]) {
+    if (MONGODB_URI && this.mongoDb) {
+      const collectionsToPersist = collections.length > 0 ? collections : STATE_COLLECTIONS;
+      this.persistQueue = this.persistQueue.then(async () => {
+        try {
+          await this.persistToMongo(collectionsToPersist);
+          this.persistenceError = undefined;
+        } catch (err) {
+          this.persistenceError = err instanceof Error ? err : new Error('Unknown MongoDB persistence error.');
+          console.error('MongoDB persistence failed. New API requests will be rejected until the database is available.');
+        }
+      });
+      return;
+    }
+
+    this.persistToLocalFile();
+  }
+
+  private async persistToMongo(collections: StateCollection[]): Promise<void> {
+    if (!this.mongoDb) throw new Error('MongoDB has not been initialized.');
+    for (const key of new Set(collections)) {
+      await this.replaceMongoCollection(key, this.data[key] as unknown as PersistedDocument[]);
+    }
+  }
+
+  private async replaceMongoCollection(key: StateCollection, documents: PersistedDocument[]): Promise<void> {
+    if (!this.mongoDb) throw new Error('MongoDB has not been initialized.');
+    const collection: Collection<MongoStoredDocument> = this.mongoDb.collection(MONGO_COLLECTION_NAMES[key]);
+    const ids = documents.map(document => document.id);
+    if (new Set(ids).size !== ids.length) {
+      throw new Error(`Cannot persist ${MONGO_COLLECTION_NAMES[key]} because duplicate stable IDs were detected.`);
+    }
+
+    if (documents.length > 0) {
+      await collection.bulkWrite(documents.map(document => ({
+        replaceOne: {
+          filter: { _id: document.id },
+          replacement: { _id: document.id, ...document },
+          upsert: true
+        }
+      })), { ordered: false });
+    }
+    await collection.deleteMany(ids.length > 0 ? { _id: { $nin: ids } } : {});
+  }
+
+  private persistToLocalFile() {
     try {
       if (!fs.existsSync(DB_DIR)) {
         fs.mkdirSync(DB_DIR, { recursive: true });
@@ -295,6 +474,18 @@ class DatabaseService {
     } catch (err) {
       console.error('Error persisting database:', err);
     }
+  }
+
+  public async flush() {
+    await this.persistQueue;
+    if (this.persistenceError) {
+      throw new Error('MongoDB persistence is unavailable. The request was not confirmed as saved.');
+    }
+  }
+
+  public async close() {
+    await this.flush();
+    await this.mongoClient?.close();
   }
 
   // --- User Operations ---
@@ -326,7 +517,7 @@ class DatabaseService {
     };
 
     this.data.users.push(newUser);
-    this.persist();
+    this.persist('users');
 
     const { passwordHash: _, ...safeUser } = newUser;
     return safeUser;
@@ -363,7 +554,7 @@ class DatabaseService {
     };
     this.data.adminRequests.push(request);
     this.addAuditLog({ actorId: userId, actorRole: user.role, action: 'ADMIN_REGISTRATION_REQUESTED', targetUserId: userId, targetRole: user.role, requestId: request.id });
-    this.persist();
+    this.persist('adminRequests', 'auditLogs');
     return request;
   }
 
@@ -401,7 +592,7 @@ class DatabaseService {
       requestId: request.id,
       reason: request.reason
     });
-    this.persist();
+    this.persist('users', 'adminRequests', 'auditLogs');
     return request;
   }
 
@@ -419,7 +610,7 @@ class DatabaseService {
     };
     this.data.adminRequests.push(request);
     this.addAuditLog({ actorId: userId, actorRole: user.role, action: 'STUDENT_REGISTRATION_REQUESTED', targetUserId: userId, targetRole: user.role, requestId: request.id });
-    this.persist();
+    this.persist('adminRequests', 'auditLogs');
     return request;
   }
 
@@ -454,7 +645,7 @@ class DatabaseService {
     };
     this.data.adminRequests.push(request);
     this.addAuditLog({ actorId: user.id, actorRole: user.role, action: 'PASSWORD_RESET_REQUESTED', targetUserId: user.id, targetRole: user.role, requestId: request.id });
-    this.persist();
+    this.persist('adminRequests', 'auditLogs');
     return request;
   }
 
@@ -469,7 +660,7 @@ class DatabaseService {
     reviewed.resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
     reviewed.resetTokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     reviewed.resetTokenUsedAt = undefined;
-    this.persist();
+    this.persist('users', 'adminRequests', 'auditLogs');
     return { ...reviewed, reason: token };
   }
 
@@ -483,7 +674,7 @@ class DatabaseService {
     user.updatedAt = new Date().toISOString();
     request.resetTokenUsedAt = new Date().toISOString();
     this.addAuditLog({ actorId: user.id, actorRole: user.role, action: 'PASSWORD_RESET_COMPLETED', targetUserId: user.id, targetRole: user.role, requestId: request.id });
-    this.persist();
+    this.persist('users', 'adminRequests', 'auditLogs');
     return true;
   }
 
@@ -493,7 +684,7 @@ class DatabaseService {
     user.status = suspended ? 'SUSPENDED' : 'ACTIVE';
     user.updatedAt = new Date().toISOString();
     this.addAuditLog({ actorId, actorRole: 'SUPER_ADMIN', action: suspended ? (user.role === 'ADMIN' ? 'ADMIN_SUSPENDED' : 'USER_SUSPENDED') : (user.role === 'ADMIN' ? 'ADMIN_UNSUSPENDED' : 'USER_UNSUSPENDED'), targetUserId: user.id, targetRole: user.role });
-    this.persist();
+    this.persist('users', 'adminRequests', 'auditLogs');
     const { passwordHash: _, ...safeUser } = user;
     return safeUser;
   }
@@ -510,7 +701,7 @@ class DatabaseService {
     request.reason = reason?.trim() || undefined;
     if (type === 'STUDENT_REGISTRATION') user.status = approve ? 'ACTIVE' : 'REJECTED';
     this.addAuditLog({ actorId: reviewerId, actorRole: 'SUPER_ADMIN', action: type === 'STUDENT_REGISTRATION' ? (approve ? 'STUDENT_REGISTRATION_APPROVED' : 'STUDENT_REGISTRATION_REJECTED') : (approve ? 'PASSWORD_RESET_APPROVED' : 'PASSWORD_RESET_REJECTED'), targetUserId: user.id, targetRole: user.role, requestId: request.id, reason: request.reason });
-    this.persist();
+    this.persist('users', 'adminRequests', 'auditLogs');
     return request;
   }
 
@@ -520,7 +711,7 @@ class DatabaseService {
 
   public recordAuditLog(log: Omit<AuditLog, 'id' | 'timestamp'>) {
     this.addAuditLog(log);
-    this.persist();
+    this.persist('auditLogs');
   }
 
   private addAuditLog(log: Omit<AuditLog, 'id' | 'timestamp'>) {
@@ -550,7 +741,7 @@ class DatabaseService {
       createdAt: new Date().toISOString()
     };
     this.data.subjects.push(newSub);
-    this.persist();
+    this.persist('subjects');
     return newSub;
   }
 
@@ -558,7 +749,7 @@ class DatabaseService {
     const idx = this.data.subjects.findIndex(s => s.id === id);
     if (idx === -1) return null;
     this.data.subjects[idx] = { ...this.data.subjects[idx], ...updates };
-    this.persist();
+    this.persist('subjects');
     return this.data.subjects[idx];
   }
 
@@ -569,7 +760,7 @@ class DatabaseService {
       // Cascade delete topics and questions for this subject
       this.data.topics = this.data.topics.filter(t => t.subjectId !== id);
       this.data.questions = this.data.questions.filter(q => q.subjectId !== id);
-      this.persist();
+      this.persist('subjects', 'topics', 'questions');
       return true;
     }
     return false;
@@ -596,7 +787,7 @@ class DatabaseService {
       createdAt: new Date().toISOString()
     };
     this.data.topics.push(newTopic);
-    this.persist();
+    this.persist('topics');
     return newTopic;
   }
 
@@ -604,7 +795,7 @@ class DatabaseService {
     const idx = this.data.topics.findIndex(t => t.id === id);
     if (idx === -1) return null;
     this.data.topics[idx] = { ...this.data.topics[idx], ...updates };
-    this.persist();
+    this.persist('topics');
     return this.data.topics[idx];
   }
 
@@ -613,7 +804,7 @@ class DatabaseService {
     this.data.topics = this.data.topics.filter(t => t.id !== id);
     if (this.data.topics.length !== prevLen) {
       this.data.questions = this.data.questions.filter(q => q.topicId !== id);
-      this.persist();
+      this.persist('topics', 'questions');
       return true;
     }
     return false;
@@ -645,7 +836,7 @@ class DatabaseService {
       createdAt: new Date().toISOString()
     };
     this.data.questions.push(newQ);
-    this.persist();
+    this.persist('questions');
     return newQ;
   }
 
@@ -653,7 +844,7 @@ class DatabaseService {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return null;
     this.data.questions[idx] = { ...this.data.questions[idx], ...updates };
-    this.persist();
+    this.persist('questions');
     return this.data.questions[idx];
   }
 
@@ -661,7 +852,7 @@ class DatabaseService {
     const prevLen = this.data.questions.length;
     this.data.questions = this.data.questions.filter(q => q.id !== id);
     if (this.data.questions.length !== prevLen) {
-      this.persist();
+      this.persist('questions');
       return true;
     }
     return false;
@@ -683,7 +874,7 @@ class DatabaseService {
       createdAt: new Date().toISOString()
     };
     this.data.tests.push(newTest);
-    this.persist();
+    this.persist('tests');
     return newTest;
   }
 
@@ -707,7 +898,7 @@ class DatabaseService {
       }
     }
 
-    this.persist();
+    this.persist('testAttempts', 'questionAttempts');
     return newAttempt;
   }
 
@@ -735,7 +926,7 @@ class DatabaseService {
     const test = this.data.tests.find(candidate => candidate.id === testId);
     if (!test) return null;
     test.status = status;
-    this.persist();
+    this.persist('tests');
     return test;
   }
 
@@ -750,7 +941,7 @@ class DatabaseService {
     const studentId = recs[0].studentId;
     this.data.recommendations = this.data.recommendations.filter(r => r.studentId !== studentId);
     this.data.recommendations.push(...recs);
-    this.persist();
+    this.persist('recommendations');
   }
 
   public getStudentRecommendations(studentId: string): Recommendation[] {
@@ -847,7 +1038,7 @@ class DatabaseService {
       }
     );
 
-    this.persist();
+    this.persist('testAttempts', 'questionAttempts');
     return {
       success: true,
       message: 'Demo performance records successfully injected for student.',

@@ -19,30 +19,45 @@ export const getSubjectById = (req: Request, res: Response) => {
   res.json(subject);
 };
 
-export const createSubject = (req: Request, res: Response) => {
-  const { examId, name, description, icon } = req.body;
-  if (!examId || !name) {
-    res.status(400).json({ message: 'examId and subject name are required.' });
-    return;
+export const createSubject = async (req: Request, res: Response) => {
+  try {
+    const { examId, name, description, icon } = req.body;
+    if (!examId || !name) {
+      res.status(400).json({ message: 'examId and subject name are required.' });
+      return;
+    }
+    const newSub = db.createSubject({ examId, name, description: description || '', icon });
+    await db.flush();
+    res.status(201).json(newSub);
+  } catch (err: any) {
+    res.status(503).json({ message: err.message || 'Unable to save the subject.' });
   }
-  const newSub = db.createSubject({ examId, name, description: description || '', icon });
-  res.status(201).json(newSub);
 };
 
-export const updateSubject = (req: Request, res: Response) => {
-  const updated = db.updateSubject(req.params.id, req.body);
-  if (!updated) {
-    res.status(404).json({ message: 'Subject not found.' });
-    return;
+export const updateSubject = async (req: Request, res: Response) => {
+  try {
+    const updated = db.updateSubject(req.params.id, req.body);
+    if (!updated) {
+      res.status(404).json({ message: 'Subject not found.' });
+      return;
+    }
+    await db.flush();
+    res.json(updated);
+  } catch (err: any) {
+    res.status(503).json({ message: err.message || 'Unable to save the subject.' });
   }
-  res.json(updated);
 };
 
-export const deleteSubject = (req: Request, res: Response) => {
-  const ok = db.deleteSubject(req.params.id);
-  if (!ok) {
-    res.status(404).json({ message: 'Subject not found or could not be deleted.' });
-    return;
+export const deleteSubject = async (req: Request, res: Response) => {
+  try {
+    const ok = db.deleteSubject(req.params.id);
+    if (!ok) {
+      res.status(404).json({ message: 'Subject not found or could not be deleted.' });
+      return;
+    }
+    await db.flush();
+    res.json({ message: 'Subject and associated topics deleted successfully.' });
+  } catch (err: any) {
+    res.status(503).json({ message: err.message || 'Unable to save the subject changes.' });
   }
-  res.json({ message: 'Subject and associated topics deleted successfully.' });
 };

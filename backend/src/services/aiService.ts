@@ -42,6 +42,7 @@ export class AIService {
       if (pythonResult && (pythonResult as any).status !== 'error' && pythonResult.recommendations) {
         // Save recommendations to database
         db.saveRecommendations(pythonResult.recommendations);
+        await db.flush();
         return pythonResult;
       }
     } catch (err) {
@@ -68,6 +69,10 @@ export class AIService {
         stderrData += data.toString();
       });
 
+      pyProcess.once('error', err => {
+        reject(new Error(`Python process could not start: ${err.message}`));
+      });
+
       pyProcess.on('close', code => {
         if (code === 0 && stdoutData.trim()) {
           try {
@@ -90,7 +95,7 @@ export class AIService {
    * Reference implementation of the Explainable Performance Scoring formula:
    * Performance Score = 0.50 * Overall Accuracy + 0.30 * Recent Accuracy + 0.20 * Time Performance
    */
-  public static calculateExplainableMetrics(studentId: string, attempts: any[]): PerformanceAnalysisResponse {
+  public static async calculateExplainableMetrics(studentId: string, attempts: any[]): Promise<PerformanceAnalysisResponse> {
     const totalAttempts = attempts.length;
     const correctCount = attempts.filter(a => a.correct === true).length;
     const overallAccuracy = totalAttempts > 0 ? Math.round((correctCount / totalAttempts) * 1000) / 1000 : 0.0;
@@ -211,6 +216,7 @@ export class AIService {
 
     // Save recommendations to database
     db.saveRecommendations(recommendations);
+    await db.flush();
 
     const testAttempts = db.getStudentAttempts(studentId);
 
