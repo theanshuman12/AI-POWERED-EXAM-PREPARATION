@@ -167,13 +167,12 @@ export const submitTestAttempt = async (req: AuthenticatedRequest, res: Response
 
     // Automatically trigger AI performance analyzer and recommendation update!
     const updatedAnalytics = await AIService.analyzeStudent(studentId);
-    await db.flush();
 
     res.status(200).json({
       attempt: savedAttempt,
       topicBreakdown,
       updatedAnalytics,
-      message: 'Quiz submitted and evaluated successfully. AI recommendations updated.'
+      message: 'Quiz submitted and evaluated successfully. AI recommendations processed.'
     });
   } catch (err: any) {
     console.error('Error submitting quiz:', err);

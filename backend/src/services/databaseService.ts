@@ -52,6 +52,13 @@ type StateCollection = keyof DatabaseSchema;
 type PersistedDocument = { id: string; [key: string]: unknown };
 type MongoStoredDocument = PersistedDocument & { _id: string };
 
+class PersistenceDataError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PersistenceDataError';
+  }
+}
+
 const STATE_COLLECTIONS: StateCollection[] = [
   'users',
   'exams',
@@ -142,6 +149,66 @@ class DatabaseService {
     console.error(`MongoDB ${operation} failed [${error.name}]: ${safeMessage}`);
   }
 
+  private recommendationCanonicalValue(recommendation: Recommendation) {
+    return JSON.stringify({
+      studentId: recommendation.studentId,
+      topicId: recommendation.topicId,
+      topic: recommendation.topic,
+      subjectName: recommendation.subjectName,
+      performanceScore: recommendation.performanceScore,
+      performanceLevel: recommendation.performanceLevel,
+      recommendedDifficulty: recommendation.recommendedDifficulty,
+      action: recommendation.action,
+      reason: recommendation.reason,
+      revisionTips: recommendation.revisionTips
+    });
+  }
+
+  private getStableRecommendationId(recommendation: Recommendation): string {
+    return `rec-${Buffer.from(this.recommendationCanonicalValue(recommendation)).toString('base64url')}`;
+  }
+
+  private normalizeRecommendations(recommendations: Recommendation[], operation: string): Recommendation[] {
+    const normalized: Recommendation[] = [];
+    const byStableId = new Map<string, string>();
+    let duplicateCount = 0;
+
+    for (const recommendation of recommendations) {
+      const stableId = this.getStableRecommendationId(recommendation);
+      const canonicalValue = this.recommendationCanonicalValue(recommendation);
+      const previousValue = byStableId.get(stableId);
+      if (previousValue === canonicalValue) {
+        duplicateCount++;
+        continue;
+      }
+      if (previousValue) {
+        console.error('MongoDB recommendation validation failed', JSON.stringify({
+          operation,
+          recommendationStableId: stableId,
+          recommendationTopic: recommendation.topic,
+          recommendationType: recommendation.performanceLevel,
+          numberOfRecommendations: recommendations.length,
+          duplicateIdsDetected: [stableId]
+        }));
+        throw new PersistenceDataError(`Recommendation stable-ID collision for ${stableId}.`);
+      }
+      byStableId.set(stableId, canonicalValue);
+      normalized.push({ ...recommendation, id: stableId });
+    }
+
+    if (duplicateCount > 0) {
+      console.warn(`MongoDB ${operation}: deduplicated recommendations`, JSON.stringify({
+        operation,
+        numberOfRecommendations: recommendations.length,
+        duplicateIdsDetected: duplicateCount,
+        recommendationStableIds: normalized.map(recommendation => recommendation.id),
+        recommendationTopics: normalized.map(recommendation => recommendation.topic),
+        recommendationTypes: normalized.map(recommendation => recommendation.performanceLevel)
+      }));
+    }
+    return normalized;
+  }
+
   private initLocal() {
     try {
       console.log(`Using database storage file: ${DB_FILE}`);
@@ -216,7 +283,7 @@ class DatabaseService {
       tests: data.tests ?? [],
       testAttempts: data.testAttempts ?? [],
       questionAttempts: data.questionAttempts ?? [],
-      recommendations: data.recommendations ?? [],
+      recommendations: this.normalizeRecommendations(data.recommendations ?? [], 'load recommendations'),
       adminRequests: data.adminRequests ?? [],
       auditLogs: data.auditLogs ?? []
     };
@@ -467,7 +534,12 @@ class DatabaseService {
         await this.persistToMongoWithRetry(collections);
         collections.forEach(collection => this.pendingCollections.delete(collection));
       } catch (err) {
-        this.markPersistenceError(`persisting ${collections.join(', ')}`, err);
+        if (err instanceof PersistenceDataError) {
+          collections.forEach(collection => this.pendingCollections.delete(collection));
+          console.error(`MongoDB data validation failed while persisting ${collections.join(', ')} [${err.name}]: ${err.message}`);
+        } else {
+          this.markPersistenceError(`persisting ${collections.join(', ')}`, err);
+        }
       }
     });
   }
@@ -483,6 +555,7 @@ class DatabaseService {
         this.persistenceError = undefined;
         return;
       } catch (err) {
+        if (err instanceof PersistenceDataError) throw err;
         this.markPersistenceError(`persisting ${collections.join(', ')}`, err);
         if (attempt === maxAttempts) throw err;
         await new Promise(resolve => setTimeout(resolve, 250 * 2 ** (attempt - 1)));
@@ -546,13 +619,25 @@ class DatabaseService {
   private async replaceMongoCollection(key: StateCollection, documents: PersistedDocument[]): Promise<void> {
     if (!this.mongoDb) throw new Error('MongoDB has not been initialized.');
     const collection: Collection<MongoStoredDocument> = this.mongoDb.collection(MONGO_COLLECTION_NAMES[key]);
-    const ids = documents.map(document => document.id);
+    const safeDocuments = key === 'recommendations'
+      ? this.normalizeRecommendations(documents as unknown as Recommendation[], 'persist recommendations') as unknown as PersistedDocument[]
+      : documents;
+    const ids = safeDocuments.map(document => document.id);
     if (new Set(ids).size !== ids.length) {
-      throw new Error(`Cannot persist ${MONGO_COLLECTION_NAMES[key]} because duplicate stable IDs were detected.`);
+      const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
+      console.error('MongoDB recommendation validation failed', JSON.stringify({
+        operation: 'persist recommendations',
+        numberOfRecommendations: safeDocuments.length,
+        duplicateIdsDetected: [...new Set(duplicateIds)],
+        recommendationStableIds: safeDocuments.map(document => document.id),
+        recommendationTopics: safeDocuments.map(document => String(document.topic ?? 'unknown')),
+        recommendationTypes: safeDocuments.map(document => String(document.performanceLevel ?? 'unknown'))
+      }));
+      throw new PersistenceDataError(`Cannot persist ${MONGO_COLLECTION_NAMES[key]} because duplicate stable IDs were detected.`);
     }
 
-    if (documents.length > 0) {
-      await collection.bulkWrite(documents.map(document => ({
+    if (safeDocuments.length > 0) {
+      await collection.bulkWrite(safeDocuments.map(document => ({
         replaceOne: {
           filter: { _id: document.id },
           replacement: { _id: document.id, ...document },
@@ -1036,9 +1121,11 @@ class DatabaseService {
   public saveRecommendations(recs: Recommendation[]) {
     // Replace old recommendations for this student
     if (recs.length === 0) return;
-    const studentId = recs[0].studentId;
+    const normalizedRecommendations = this.normalizeRecommendations(recs, 'prepare recommendations');
+    if (normalizedRecommendations.length === 0) return;
+    const studentId = normalizedRecommendations[0].studentId;
     this.data.recommendations = this.data.recommendations.filter(r => r.studentId !== studentId);
-    this.data.recommendations.push(...recs);
+    this.data.recommendations.push(...normalizedRecommendations);
     this.persist('recommendations');
   }
 
