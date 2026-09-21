@@ -16,8 +16,8 @@ async function startServer() {
     app.use(cors({ origin: appUrl }));
   }
   app.use(express.json());
-  app.use('/api', (_req, res, next) => {
-    if (!db.isAvailable) {
+  app.use('/api', async (_req, res, next) => {
+    if (!(await db.ensureAvailable())) {
       res.status(503).json({ status: 'unavailable', message: 'Database persistence is temporarily unavailable.' });
       return;
     }
