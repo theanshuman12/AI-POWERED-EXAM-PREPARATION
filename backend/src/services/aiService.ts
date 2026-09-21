@@ -10,6 +10,22 @@ import {
 } from '../../types';
 
 export class AIService {
+  private static async saveRecommendationsSafely(recommendations: Recommendation[]): Promise<void> {
+    try {
+      db.saveRecommendations(recommendations);
+      await db.flush();
+    } catch (err) {
+      console.error('MongoDB recommendation persistence failed', JSON.stringify({
+        operation: 'save recommendations',
+        numberOfRecommendations: recommendations.length,
+        recommendationStableIds: recommendations.map(recommendation => recommendation.id),
+        recommendationTopics: recommendations.map(recommendation => recommendation.topic),
+        errorName: err instanceof Error ? err.name : 'UnknownError',
+        errorMessage: err instanceof Error ? err.message : String(err)
+      }));
+    }
+  }
+
   /**
    * Invokes Python performance analyzer via CLI process or falls back to identical in-process logic
    */
@@ -46,8 +62,7 @@ export class AIService {
     }
 
     if (pythonResult && (pythonResult as any).status !== 'error' && pythonResult.recommendations) {
-      db.saveRecommendations(pythonResult.recommendations);
-      await db.flush();
+      await this.saveRecommendationsSafely(pythonResult.recommendations);
       return pythonResult;
     }
 
@@ -217,8 +232,7 @@ export class AIService {
     recommendations.sort((a, b) => a.performanceScore - b.performanceScore);
 
     // Save recommendations to database
-    db.saveRecommendations(recommendations);
-    await db.flush();
+    await this.saveRecommendationsSafely(recommendations);
 
     const testAttempts = db.getStudentAttempts(studentId);
 
