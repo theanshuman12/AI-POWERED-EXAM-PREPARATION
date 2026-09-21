@@ -36,17 +36,19 @@ export class AIService {
       };
     });
 
-    // Try calling the Python service via subprocess
+    // Try calling the Python service via subprocess. Database failures must not be
+    // treated as analyzer failures because a submission is only successful after persistence.
+    let pythonResult: PerformanceAnalysisResponse | undefined;
     try {
-      const pythonResult = await this.runPythonAnalyzer(studentId, enrichedPerformance);
-      if (pythonResult && (pythonResult as any).status !== 'error' && pythonResult.recommendations) {
-        // Save recommendations to database
-        db.saveRecommendations(pythonResult.recommendations);
-        await db.flush();
-        return pythonResult;
-      }
+      pythonResult = await this.runPythonAnalyzer(studentId, enrichedPerformance);
     } catch (err) {
-      console.warn('Python AI subprocess note (falling back to synchronized native calculation):', err);
+      console.warn('Python AI analyzer unavailable; falling back to synchronized native calculation:', err instanceof Error ? err.message : err);
+    }
+
+    if (pythonResult && (pythonResult as any).status !== 'error' && pythonResult.recommendations) {
+      db.saveRecommendations(pythonResult.recommendations);
+      await db.flush();
+      return pythonResult;
     }
 
     // Fallback: Synchronized identical mathematical model

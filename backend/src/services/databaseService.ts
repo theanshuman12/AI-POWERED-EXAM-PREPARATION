@@ -106,6 +106,8 @@ class DatabaseService {
   private mongoDb?: Db;
   private mongoClient?: MongoClient;
   private persistQueue: Promise<void> = Promise.resolve();
+  private pendingCollections = new Set<StateCollection>();
+  private recoveryPromise?: Promise<boolean>;
   private persistenceError?: Error;
   public readonly ready: Promise<void>;
 
@@ -119,6 +121,25 @@ class DatabaseService {
 
   public get isAvailable(): boolean {
     return !this.persistenceError;
+  }
+
+  private createMongoClient(): MongoClient {
+    const client = new MongoClient(MONGODB_URI!, {
+      maxPoolSize: 20,
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000
+    });
+    client.on('error', err => this.markPersistenceError('client connection', err));
+    return client;
+  }
+
+  private markPersistenceError(operation: string, err: unknown) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    this.persistenceError = error;
+    const safeMessage = error.message
+      .replace(/mongodb(?:\+srv)?:\/\/[^\s]+/gi, 'mongodb://[redacted]')
+      .replace(/(password|passwd|pwd|secret|token|api[_-]?key)=([^&\s]+)/gi, '$1=[redacted]');
+    console.error(`MongoDB ${operation} failed [${error.name}]: ${safeMessage}`);
   }
 
   private initLocal() {
@@ -148,7 +169,7 @@ class DatabaseService {
 
   private async initMongo() {
     try {
-      this.mongoClient = new MongoClient(MONGODB_URI!);
+      this.mongoClient = this.createMongoClient();
       await this.mongoClient.connect();
       this.mongoDb = this.mongoClient.db();
       await this.createMongoIndexes();
@@ -423,15 +444,8 @@ class DatabaseService {
   public persist(...collections: StateCollection[]) {
     if (MONGODB_URI && this.mongoDb) {
       const collectionsToPersist = collections.length > 0 ? collections : STATE_COLLECTIONS;
-      this.persistQueue = this.persistQueue.then(async () => {
-        try {
-          await this.persistToMongo(collectionsToPersist);
-          this.persistenceError = undefined;
-        } catch (err) {
-          this.persistenceError = err instanceof Error ? err : new Error('Unknown MongoDB persistence error.');
-          console.error('MongoDB persistence failed. New API requests will be rejected until the database is available.');
-        }
-      });
+      collectionsToPersist.forEach(collection => this.pendingCollections.add(collection));
+      this.enqueuePendingPersistence();
       return;
     }
 
@@ -443,6 +457,90 @@ class DatabaseService {
     for (const key of new Set(collections)) {
       await this.replaceMongoCollection(key, this.data[key] as unknown as PersistedDocument[]);
     }
+  }
+
+  private enqueuePendingPersistence() {
+    const collections = [...this.pendingCollections];
+    if (collections.length === 0) return;
+    this.persistQueue = this.persistQueue.then(async () => {
+      try {
+        await this.persistToMongoWithRetry(collections);
+        collections.forEach(collection => this.pendingCollections.delete(collection));
+      } catch (err) {
+        this.markPersistenceError(`persisting ${collections.join(', ')}`, err);
+      }
+    });
+  }
+
+  private async persistToMongoWithRetry(collections: StateCollection[]) {
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        if (!(await this.recoverMongoConnection())) {
+          throw this.persistenceError || new Error('MongoDB connection is unavailable.');
+        }
+        await this.persistToMongo(collections);
+        this.persistenceError = undefined;
+        return;
+      } catch (err) {
+        this.markPersistenceError(`persisting ${collections.join(', ')}`, err);
+        if (attempt === maxAttempts) throw err;
+        await new Promise(resolve => setTimeout(resolve, 250 * 2 ** (attempt - 1)));
+      }
+    }
+  }
+
+  private async recoverMongoConnection(): Promise<boolean> {
+    if (!MONGODB_URI) return true;
+    if (this.recoveryPromise) return this.recoveryPromise;
+
+    this.recoveryPromise = (async () => {
+      try {
+        if (this.mongoDb) {
+          await this.mongoDb.command({ ping: 1 });
+          this.persistenceError = undefined;
+          return true;
+        }
+      } catch (err) {
+        this.markPersistenceError('health check', err);
+      }
+
+      try {
+        await this.mongoClient?.close().catch(() => undefined);
+        const client = this.createMongoClient();
+        try {
+          await client.connect();
+          const database = client.db();
+          await database.command({ ping: 1 });
+          this.mongoClient = client;
+          this.mongoDb = database;
+          this.persistenceError = undefined;
+          console.log('MongoDB connection recovered.');
+          return true;
+        } catch (err) {
+          await client.close().catch(() => undefined);
+          throw err;
+        }
+      } catch (err) {
+        this.markPersistenceError('reconnection', err);
+        return false;
+      }
+    })().finally(() => {
+      this.recoveryPromise = undefined;
+    });
+
+    return this.recoveryPromise;
+  }
+
+  public async ensureAvailable(): Promise<boolean> {
+    if (!MONGODB_URI) return true;
+    if (!this.persistenceError && this.mongoDb) return true;
+    if (!(await this.recoverMongoConnection())) return false;
+    if (this.pendingCollections.size > 0) {
+      this.enqueuePendingPersistence();
+      await this.persistQueue;
+    }
+    return !this.persistenceError;
   }
 
   private async replaceMongoCollection(key: StateCollection, documents: PersistedDocument[]): Promise<void> {
