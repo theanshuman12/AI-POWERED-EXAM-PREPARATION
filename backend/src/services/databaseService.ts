@@ -446,8 +446,12 @@ class DatabaseService {
       }
     }
     for (const subject of INITIAL_SUBJECTS) {
-      if (!this.data.subjects.some(existing => existing.id === subject.id)) {
+      const existingSubject = this.data.subjects.find(existing => existing.id === subject.id);
+      if (!existingSubject) {
         this.data.subjects.push(subject);
+        changed = true;
+      } else if (subject.id === 'subj-uppet-paper-mock' && existingSubject.description !== subject.description) {
+        existingSubject.description = subject.description;
         changed = true;
       }
     }
