@@ -108,6 +108,7 @@ export const getStudentDetails = async (req: AuthenticatedRequest, res: Response
   }
   const attempts = getAttemptsForUser(user.id);
   db.recordAuditLog({ actorId: req.user!.id, actorRole: 'SUPER_ADMIN', action: 'STUDENT_PROFILE_VIEWED', targetUserId: user.id, targetRole: user.role });
+  await db.flush();
   res.json({
     student: studentSummary(user),
     performance: buildPerformance(attempts),
@@ -138,6 +139,7 @@ export const getAttemptDetails = async (req: AuthenticatedRequest, res: Response
   const student = db.findUserById(attempt.studentId);
   const test = attempt.testId ? db.getTestById(attempt.testId) : undefined;
   db.recordAuditLog({ actorId: req.user!.id, actorRole: 'SUPER_ADMIN', action: 'TEST_RESULT_VIEWED', targetUserId: attempt.studentId, targetRole: student?.role || 'USER' });
+  await db.flush();
   const questionDetails = (attempt.questionAttempts || []).map(questionAttempt => {
     const question = db.getQuestionById(questionAttempt.questionId);
     return { ...questionAttempt, question: question?.question || questionAttempt.questionId, options: question?.options || [], correctAnswer: question?.correctAnswer ?? -1 };
@@ -166,6 +168,7 @@ export const getMockTestAnalytics = async (req: AuthenticatedRequest, res: Respo
   }
   const attempts = db.getAllAttempts().filter(attempt => attempt.testId === test.id);
   db.recordAuditLog({ actorId: req.user!.id, actorRole: 'SUPER_ADMIN', action: 'MOCK_ANALYTICS_VIEWED', targetUserId: req.user!.id, targetRole: 'SUPER_ADMIN' });
+  await db.flush();
   res.json({ test, performance: buildPerformance(attempts), attempts });
 };
 
@@ -180,5 +183,6 @@ export const updateMockTestStatus = async (req: AuthenticatedRequest, res: Respo
     return;
   }
   db.recordAuditLog({ actorId: req.user!.id, actorRole: 'SUPER_ADMIN', action: 'MOCK_STATUS_CHANGED', targetUserId: req.user!.id, targetRole: 'SUPER_ADMIN', reason: req.body.status });
+  await db.flush();
   res.json({ test });
 };

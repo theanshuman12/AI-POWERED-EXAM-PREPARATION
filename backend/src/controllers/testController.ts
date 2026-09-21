@@ -23,21 +23,26 @@ export const getTestById = (req: AuthenticatedRequest, res: Response) => {
   res.json({ ...test, questionDetails: questions });
 };
 
-export const createTest = (req: AuthenticatedRequest, res: Response) => {
-  const { title, subjectId, topics, questions, duration, difficulty } = req.body;
-  if (!title || !subjectId || !questions || questions.length === 0) {
-    res.status(400).json({ message: 'Title, subjectId, and at least one question are required.' });
-    return;
+export const createTest = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { title, subjectId, topics, questions, duration, difficulty } = req.body;
+    if (!title || !subjectId || !questions || questions.length === 0) {
+      res.status(400).json({ message: 'Title, subjectId, and at least one question are required.' });
+      return;
+    }
+    const newTest = db.createTest({
+      title,
+      subjectId,
+      topics: topics || [],
+      questions,
+      duration: duration || 15,
+      difficulty: difficulty || 'Medium'
+    });
+    await db.flush();
+    res.status(201).json(newTest);
+  } catch (err: any) {
+    res.status(503).json({ message: err.message || 'Unable to save the test.' });
   }
-  const newTest = db.createTest({
-    title,
-    subjectId,
-    topics: topics || [],
-    questions,
-    duration: duration || 15,
-    difficulty: difficulty || 'Medium'
-  });
-  res.status(201).json(newTest);
 };
 
 export const startPracticeSession = (req: AuthenticatedRequest, res: Response) => {
@@ -158,9 +163,11 @@ export const submitTestAttempt = async (req: AuthenticatedRequest, res: Response
       timeTaken: Number(timeTaken) || 120,
       questionAttempts
     });
+    await db.flush();
 
     // Automatically trigger AI performance analyzer and recommendation update!
     const updatedAnalytics = await AIService.analyzeStudent(studentId);
+    await db.flush();
 
     res.status(200).json({
       attempt: savedAttempt,

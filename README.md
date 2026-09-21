@@ -46,11 +46,21 @@ npm run build
 npm start
 ```
 
-Configure `JWT_SECRET`, `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, and `APP_URL` in the hosting environment. `SUPER_ADMIN_EMAIL` identifies the single protected owner account server-side, and `SUPER_ADMIN_PASSWORD` is used only when the embedded storage is initialized without an owner account. In production the server refuses to initialize without the required owner settings. `PORT` is supplied by the hosting platform and defaults to `3000` for local development. `GEMINI_API_KEY` is optional; without it, the built-in curriculum fallback provides explanations and hints. `MONGO_URI` is optional and the current application continues to use its embedded JSON storage when it is unset. The FastAPI service under `ai-service/` is optional because the Node backend falls back to its native recommendation calculation when the Python analyzer is unavailable. The browser uses same-origin `/api` requests, so no frontend API URL is required.
+Configure the existing production settings for JWT, Super Admin, CORS, and optional AI services in the hosting environment. Set `MONGODB_URI` privately in Render for MongoDB Atlas. The server starts in production only when that variable is configured and MongoDB is reachable; it never falls back to `storage.json` in production. Local development uses `database/storage.json` only when `MONGODB_URI` is unset and `NODE_ENV` is not production. MongoDB stores application records in `users`, `exams`, `subjects`, `topics`, `questions`, `tests`, `test_attempts`, `question_attempts`, `recommendations`, `admin_requests`, and `audit_logs`. Never commit a connection string or its password. The browser uses same-origin `/api` requests, so no frontend API URL is required.
+
+### Migrating Existing JSON Data
+
+Keep `database/storage.json` as a backup. Configure `MONGODB_URI` locally, then run:
+
+```bash
+npm run migrate:mongo
+```
+
+The migration copies JSON data into the MongoDB collections only when all target collections are empty. It validates stable IDs, runs in an Atlas transaction, stops without changing MongoDB if data already exists, and never deletes or modifies `storage.json`. Verify the migrated data before configuring the Render service.
 
 ### Authentication and Admin Authorization
 
-New users are created as `USER` with `PENDING` status and cannot log in until `SUPER_ADMIN` approval. Admin access is requested through `POST /api/admin-requests` and remains pending until the one `SUPER_ADMIN` account approves it. Password resets also require a Super Admin-approved, short-lived, one-time token. Account suspension is enforced on login and every authenticated request. Existing `ADMIN` accounts retain academic administration features but cannot approve requests, reset passwords, suspend users, or change roles. Request reviews, password-reset completion, role changes, and suspension changes are stored in the embedded JSON `auditLogs` collection.
+New users are created as `USER` with `PENDING` status and cannot log in until `SUPER_ADMIN` approval. Admin access is requested through `POST /api/admin-requests` and remains pending until the one `SUPER_ADMIN` account approves it. Password resets also require a Super Admin-approved, short-lived, one-time token. Account suspension is enforced on login and every authenticated request. Existing `ADMIN` accounts retain academic administration features but cannot approve requests, reset passwords, suspend users, or change roles. Request reviews, password-reset completion, role changes, and suspension changes are stored in MongoDB audit logs in production.
 
 ### Admin Access System
 

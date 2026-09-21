@@ -4,8 +4,10 @@ import cors from 'cors';
 import 'dotenv/config';
 import { createServer as createViteServer } from 'vite';
 import apiRouter from './backend/src/routes/index';
+import { db } from './backend/src/services/databaseService';
 
 async function startServer() {
+  await db.ready;
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
   const appUrl = process.env.APP_URL?.trim();
@@ -14,6 +16,13 @@ async function startServer() {
     app.use(cors({ origin: appUrl }));
   }
   app.use(express.json());
+  app.use('/api', (_req, res, next) => {
+    if (!db.isAvailable) {
+      res.status(503).json({ status: 'unavailable', message: 'Database persistence is temporarily unavailable.' });
+      return;
+    }
+    next();
+  });
 
   // API Health Check
   app.get('/api/health', (req, res) => {
@@ -43,11 +52,26 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`AI Power Exam Preparation server running on http://0.0.0.0:${PORT}`);
   });
+
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} received; closing the server after pending database writes.`);
+    server.close(() => {
+      db.close()
+        .catch(() => console.error('Error closing MongoDB connection.'))
+        .finally(() => process.exit(0));
+    });
+  };
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer().catch(err => {
-  console.error('Failed to start fullstack server:', err);
+  console.error('Failed to start fullstack server:', err instanceof Error ? err.message : err);
+  process.exitCode = 1;
 });

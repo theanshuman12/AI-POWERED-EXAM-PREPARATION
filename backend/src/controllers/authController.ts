@@ -29,6 +29,7 @@ export const register = async (req: Request, res: Response) => {
     });
     const request = db.createStudentRegistrationRequest(newUser.id);
     const adminRequest = requestAdminAccess ? db.createAdminRequest(newUser.id) : undefined;
+    await db.flush();
     res.status(201).json({
       user: newUser,
       request,
@@ -94,6 +95,7 @@ export const reviewStudentRegistration = async (req: AuthenticatedRequest, res: 
       res.status(404).json({ message: 'Student registration request not found.' });
       return;
     }
+    await db.flush();
     res.status(200).json({ request, message: `Student registration ${approve ? 'approved' : 'rejected'}.` });
   } catch (err: any) {
     res.status(400).json({ message: err.message || 'Unable to review registration request.' });
@@ -101,13 +103,18 @@ export const reviewStudentRegistration = async (req: AuthenticatedRequest, res: 
 };
 
 export const requestPasswordReset = async (req: Request, res: Response) => {
-  const email = String(req.body?.email || '').trim();
-  if (!email) {
-    res.status(400).json({ message: 'Email is required.' });
-    return;
+  try {
+    const email = String(req.body?.email || '').trim();
+    if (!email) {
+      res.status(400).json({ message: 'Email is required.' });
+      return;
+    }
+    db.requestPasswordReset(email);
+    await db.flush();
+    res.status(202).json({ message: 'Your password reset request has been submitted. Please wait for Super Admin approval.' });
+  } catch (err: any) {
+    res.status(503).json({ message: err.message || 'Unable to save the password reset request.' });
   }
-  db.requestPasswordReset(email);
-  res.status(202).json({ message: 'Your password reset request has been submitted. Please wait for Super Admin approval.' });
 };
 
 export const getPasswordResetRequests = async (_req: AuthenticatedRequest, res: Response) => {
@@ -134,6 +141,7 @@ export const reviewPasswordReset = async (req: AuthenticatedRequest, res: Respon
       res.status(404).json({ message: 'Password reset request not found.' });
       return;
     }
+    await db.flush();
     const response: { request: typeof request; resetToken?: string; message: string } = {
       request: { ...request, reason: approve ? undefined : request.reason },
       message: `Password reset ${approve ? 'approved' : 'rejected'}.`
@@ -146,17 +154,22 @@ export const reviewPasswordReset = async (req: AuthenticatedRequest, res: Respon
 };
 
 export const completePasswordReset = async (req: Request, res: Response) => {
-  const token = String(req.body?.token || '');
-  const password = String(req.body?.password || '');
-  if (!token || password.length < 6) {
-    res.status(400).json({ message: 'A reset token and password of at least 6 characters are required.' });
-    return;
+  try {
+    const token = String(req.body?.token || '');
+    const password = String(req.body?.password || '');
+    if (!token || password.length < 6) {
+      res.status(400).json({ message: 'A reset token and password of at least 6 characters are required.' });
+      return;
+    }
+    if (!db.completePasswordReset(token, password)) {
+      res.status(400).json({ message: 'Reset token is invalid or expired.' });
+      return;
+    }
+    await db.flush();
+    res.status(200).json({ message: 'Password reset completed successfully.' });
+  } catch (err: any) {
+    res.status(503).json({ message: err.message || 'Unable to save the new password.' });
   }
-  if (!db.completePasswordReset(token, password)) {
-    res.status(400).json({ message: 'Reset token is invalid or expired.' });
-    return;
-  }
-  res.status(200).json({ message: 'Password reset completed successfully.' });
 };
 
 export const getAuditLogs = async (_req: AuthenticatedRequest, res: Response) => {
@@ -164,17 +177,22 @@ export const getAuditLogs = async (_req: AuthenticatedRequest, res: Response) =>
 };
 
 export const updateUserSuspension = async (req: AuthenticatedRequest, res: Response) => {
-  const suspended = req.params.action === 'suspend';
-  if (!['suspend', 'unsuspend'].includes(req.params.action)) {
-    res.status(400).json({ message: 'Action must be suspend or unsuspend.' });
-    return;
+  try {
+    const suspended = req.params.action === 'suspend';
+    if (!['suspend', 'unsuspend'].includes(req.params.action)) {
+      res.status(400).json({ message: 'Action must be suspend or unsuspend.' });
+      return;
+    }
+    const user = db.setUserStatus(req.params.id, req.user!.id, suspended);
+    if (!user) {
+      res.status(400).json({ message: 'User cannot be suspended or was not found.' });
+      return;
+    }
+    await db.flush();
+    res.status(200).json({ user, message: `User ${suspended ? 'suspended' : 'unsuspended'}.` });
+  } catch (err: any) {
+    res.status(503).json({ message: err.message || 'Unable to save the account status.' });
   }
-  const user = db.setUserStatus(req.params.id, req.user!.id, suspended);
-  if (!user) {
-    res.status(400).json({ message: 'User cannot be suspended or was not found.' });
-    return;
-  }
-  res.status(200).json({ user, message: `User ${suspended ? 'suspended' : 'unsuspended'}.` });
 };
 
 export const submitAdminRequest = async (req: AuthenticatedRequest, res: Response) => {
@@ -188,6 +206,7 @@ export const submitAdminRequest = async (req: AuthenticatedRequest, res: Respons
   }
   try {
     const request = db.createAdminRequest(req.user.id);
+    await db.flush();
     res.status(201).json({ request, message: 'Admin request submitted successfully.' });
   } catch (err: any) {
     res.status(400).json({ message: err.message || 'Unable to submit Admin request.' });
@@ -219,6 +238,12 @@ export const reviewAdminRequest = async (req: AuthenticatedRequest, res: Respons
   const request = db.reviewAdminRequest(req.params.id, req.user.id, approve, req.body?.reason);
   if (!request) {
     res.status(404).json({ message: 'Pending Admin request not found.' });
+    return;
+  }
+  try {
+    await db.flush();
+  } catch (err: any) {
+    res.status(503).json({ message: err.message || 'Unable to save the Admin request review.' });
     return;
   }
   res.status(200).json({ request, message: `Admin request ${approve ? 'approved' : 'rejected'}.` });
