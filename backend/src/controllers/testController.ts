@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import crypto from 'crypto';
 import { db } from '../services/databaseService';
 import { AIService } from '../services/aiService';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
@@ -21,6 +22,26 @@ export const getTestById = (req: AuthenticatedRequest, res: Response) => {
     .filter(Boolean);
 
   res.json({ ...test, questionDetails: questions });
+};
+
+export const startMockAttempt = (req: AuthenticatedRequest, res: Response) => {
+  const test = db.getTestById(req.params.id);
+  if (!test) {
+    res.status(404).json({ message: 'Test not found.' });
+    return;
+  }
+
+  const questionDetails = test.questions
+    .map(qid => db.getQuestionById(qid))
+    .filter(Boolean);
+
+  res.status(201).json({
+    attemptId: `att-${crypto.randomUUID()}`,
+    title: test.title,
+    subjectId: test.subjectId,
+    duration: test.duration,
+    questionDetails
+  });
 };
 
 export const createTest = async (req: AuthenticatedRequest, res: Response) => {
@@ -81,6 +102,7 @@ export const submitTestAttempt = async (req: AuthenticatedRequest, res: Response
 
     const {
       testId,
+      attemptId,
       title,
       subjectId,
       answers, // array of { questionId, selectedAnswer, responseTime }
@@ -147,6 +169,7 @@ export const submitTestAttempt = async (req: AuthenticatedRequest, res: Response
       : 0;
 
     const savedAttempt = db.saveTestAttempt({
+      id: attemptId,
       studentId,
       testId: testId || undefined,
       title: title || 'Quiz Session',

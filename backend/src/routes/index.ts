@@ -66,6 +66,7 @@ router.delete('/questions/:id', authenticateToken, requireAdmin, qCtrl.deleteQue
 router.get('/tests', authenticateToken, testCtrl.getTests);
 router.get('/tests/history', authenticateToken, testCtrl.getStudentHistory);
 router.get('/tests/:id', authenticateToken, testCtrl.getTestById);
+router.post('/tests/:id/start', authenticateToken, testCtrl.startMockAttempt);
 router.post('/tests', authenticateToken, requireAdmin, testCtrl.createTest);
 router.post('/tests/start', authenticateToken, testCtrl.startPracticeSession);
 router.post('/tests/submit', authenticateToken, testCtrl.submitTestAttempt);

@@ -1022,7 +1022,7 @@ export const UPPET_PAPER_MOCK_QUESTIONS: Question[] = [
   ...question,
   id: `q-uppet-paper-mock-${index + 1}`,
   subjectId: 'subj-uppet-paper-mock',
-  topicId: 'top-uppet-paper-mock-mixed'
+  topicId: question.topicId
 }));
 
 export const UPPET_PAPER_MOCK_TESTS: Test[] = Array.from({ length: 10 }, (_, index) => ({

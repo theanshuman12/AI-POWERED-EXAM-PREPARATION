@@ -49,7 +49,7 @@ try:
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel
-    from typing import List, Optional, Any
+    from typing import List, Optional, Any, Dict
 
     app = FastAPI(
         title="AI Power Exam Preparation - Recommendation Service",

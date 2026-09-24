@@ -73,10 +73,19 @@ export class AIService {
   private static runPythonAnalyzer(studentId: string, performance: any[]): Promise<PerformanceAnalysisResponse> {
     return new Promise((resolve, reject) => {
       const scriptPath = path.resolve(process.cwd(), 'ai-service', 'app.py');
-      const pyProcess = spawn('python3', [scriptPath, '--cli']);
+      const pythonCommand = process.platform === 'win32' ? 'python' : 'python3';
+      const pyProcess = spawn(pythonCommand, [scriptPath, '--cli']);
 
       let stdoutData = '';
       let stderrData = '';
+      let settled = false;
+      let payloadWritten = false;
+
+      const rejectOnce = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
 
       pyProcess.stdout.on('data', data => {
         stdoutData += data.toString();
@@ -87,24 +96,44 @@ export class AIService {
       });
 
       pyProcess.once('error', err => {
-        reject(new Error(`Python process could not start: ${err.message}`));
+        rejectOnce(new Error(`Python process could not start with ${pythonCommand}: ${err.message}`));
+      });
+
+      pyProcess.stdin.once('error', err => {
+        rejectOnce(new Error(`Python analyzer stdin failed: ${err.message}`));
       });
 
       pyProcess.on('close', code => {
+        if (settled) return;
+        if (!payloadWritten) {
+          rejectOnce(new Error(`Python process exited before receiving the analysis payload with code ${code}.`));
+          return;
+        }
         if (code === 0 && stdoutData.trim()) {
           try {
             const parsed = JSON.parse(stdoutData.trim());
             resolve(parsed);
+            settled = true;
           } catch (e) {
-            reject(new Error(`Failed to parse Python output: ${e}`));
+            rejectOnce(new Error(`Failed to parse Python output: ${e}`));
           }
         } else {
-          reject(new Error(`Python process exited with code ${code}: ${stderrData}`));
+          rejectOnce(new Error(`Python process exited with code ${code}: ${stderrData}`));
         }
       });
 
-      pyProcess.stdin.write(JSON.stringify({ studentId, performance }));
-      pyProcess.stdin.end();
+      if (pyProcess.stdin.destroyed || !pyProcess.stdin.writable) {
+        rejectOnce(new Error('Python analyzer stdin is unavailable before sending the analysis payload.'));
+        return;
+      }
+
+      try {
+        pyProcess.stdin.write(JSON.stringify({ studentId, performance }));
+        payloadWritten = true;
+        pyProcess.stdin.end();
+      } catch (err) {
+        rejectOnce(new Error(`Python analyzer payload could not be written: ${err instanceof Error ? err.message : err}`));
+      }
     });
   }
 

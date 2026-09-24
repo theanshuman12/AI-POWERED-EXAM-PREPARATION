@@ -271,6 +271,16 @@ class ApiClient {
     return this.request<Test & { questionDetails: Question[] }>(`/tests/${id}`);
   }
 
+  startMockAttempt(testId: string): Promise<{
+    attemptId: string;
+    title: string;
+    subjectId: string;
+    duration: number;
+    questionDetails: Question[];
+  }> {
+    return this.request(`/tests/${testId}/start`, { method: 'POST' });
+  }
+
   createTest(data: Omit<Test, 'id' | 'createdAt'>): Promise<Test> {
     return this.request<Test>('/tests', {
       method: 'POST',
@@ -293,6 +303,7 @@ class ApiClient {
 
   submitTest(submission: {
     testId?: string;
+    attemptId?: string;
     title: string;
     subjectId: string;
     timeTaken: number;
