@@ -81,7 +81,7 @@ export const AnalyticsPage: React.FC = () => {
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     .map((att, idx) => ({
       name: `Test #${idx + 1}`,
-      score: att.score,
+      score: att.subjectId === 'subj-uppet-paper-mock' ? att.accuracy : att.score,
       accuracy: Math.round(att.accuracy),
       date: new Date(att.createdAt).toLocaleDateString()
     }));
