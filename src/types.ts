@@ -126,6 +126,7 @@ export interface Test {
 
 export interface QuestionAttempt {
   id: string;
+  attemptId?: string;
   studentId: string;
   questionId: string;
   topicId: string;

@@ -497,6 +497,16 @@ class DatabaseService {
         changed = true;
       }
     }
+    const paperMockQuestionCatalog = new Map(UPPET_PAPER_MOCK_QUESTIONS.map(question => [question.id, question]));
+    for (const question of this.data.questions) {
+      if (question.subjectId === 'subj-uppet-paper-mock' && question.topicId === 'top-uppet-paper-mock-mixed') {
+        const canonicalPaperQuestion = paperMockQuestionCatalog.get(question.id);
+        if (canonicalPaperQuestion && canonicalPaperQuestion.topicId !== 'top-uppet-paper-mock-mixed') {
+          question.topicId = canonicalPaperQuestion.topicId;
+          changed = true;
+        }
+      }
+    }
     for (const question of UPPET_PAPER_MOCK_QUESTIONS) {
       if (!this.data.questions.some(existing => existing.id === question.id)) {
         this.data.questions.push(question);
@@ -1066,10 +1076,10 @@ class DatabaseService {
   }
 
   // --- Test Attempt & Question Attempt Operations ---
-  public saveTestAttempt(attempt: Omit<TestAttempt, 'id' | 'createdAt'>): TestAttempt {
+  public saveTestAttempt(attempt: Omit<TestAttempt, 'id' | 'createdAt'> & { id?: string }): TestAttempt {
     const newAttempt: TestAttempt = {
-      id: 'att-' + Math.random().toString(36).substring(2, 9),
       ...attempt,
+      id: attempt.id || 'att-' + Math.random().toString(36).substring(2, 9),
       createdAt: new Date().toISOString()
     };
     this.data.testAttempts.push(newAttempt);
@@ -1078,6 +1088,7 @@ class DatabaseService {
       for (const qa of attempt.questionAttempts) {
         this.data.questionAttempts.push({
           ...qa,
+          attemptId: newAttempt.id,
           id: qa.id || ('qa-' + Math.random().toString(36).substring(2, 9)),
           studentId: attempt.studentId,
           createdAt: new Date().toISOString()

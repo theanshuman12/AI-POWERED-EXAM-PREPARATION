@@ -46,9 +46,10 @@ export const QuizPage: React.FC<QuizPageProps> = ({
   const [loadingHint, setLoadingHint] = useState<boolean>(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState<boolean>(false);
   const [isPaperMock, setIsPaperMock] = useState<boolean>(false);
+  const [attemptId, setAttemptId] = useState<string | null>(null);
 
   const questionStartTimeRef = useRef<number>(Date.now());
-  const sessionStorageKey = testId ? `ai_prep_quiz_${testId}` : null;
+  const sessionStorageKey = attemptId ? `ai_prep_quiz_${attemptId}` : null;
 
   // Load quiz questions
   useEffect(() => {
@@ -56,26 +57,26 @@ export const QuizPage: React.FC<QuizPageProps> = ({
       setLoading(true);
       try {
         if (testId) {
-          const testData = await api.getTest(testId);
-          setQuestions(testData.questionDetails || []);
-          setQuizTitle(testData.title);
-          setIsPaperMock(testData.subjectId === 'subj-uppet-paper-mock');
-          if (sessionStorageKey) {
-            const savedSession = localStorage.getItem(sessionStorageKey);
-            if (savedSession) {
-              try {
-                const parsed = JSON.parse(savedSession);
-                setAnswers(parsed.answers || {});
-                setFlagged(parsed.flagged || {});
-                setResponseTimes(parsed.responseTimes || {});
-                setCurrentIndex(parsed.currentIndex || 0);
-                setTotalTimeTaken(parsed.totalTimeTaken || 0);
-              } catch {
-                localStorage.removeItem(sessionStorageKey);
-              }
+          const startedAttempt = await api.startMockAttempt(testId);
+          setAttemptId(startedAttempt.attemptId);
+          setQuestions(startedAttempt.questionDetails || []);
+          setQuizTitle(startedAttempt.title);
+          setIsPaperMock(startedAttempt.subjectId === 'subj-uppet-paper-mock');
+          const newSessionStorageKey = `ai_prep_quiz_${startedAttempt.attemptId}`;
+          const savedSession = localStorage.getItem(newSessionStorageKey);
+          if (savedSession) {
+            try {
+              const parsed = JSON.parse(savedSession);
+              setAnswers(parsed.answers || {});
+              setFlagged(parsed.flagged || {});
+              setResponseTimes(parsed.responseTimes || {});
+              setCurrentIndex(parsed.currentIndex || 0);
+              setTotalTimeTaken(parsed.totalTimeTaken || 0);
+            } catch {
+              localStorage.removeItem(newSessionStorageKey);
             }
           }
-          setSecondsRemaining((testData.duration || 15) * 60);
+          setSecondsRemaining((startedAttempt.duration || 15) * 60);
         } else {
           const practice = await api.startPractice({
             subjectId,
@@ -185,6 +186,7 @@ export const QuizPage: React.FC<QuizPageProps> = ({
 
       const result = await api.submitTest({
         testId: testId || undefined,
+        attemptId: attemptId || undefined,
         title: quizTitle,
         subjectId: questions[0]?.subjectId || 'subj-dbms',
         timeTaken: totalTimeTaken,
