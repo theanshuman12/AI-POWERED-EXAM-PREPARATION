@@ -313,9 +313,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     </span>
                   </div>
                   <span className={`font-mono font-bold px-2 py-0.5 rounded-md ${
-                    att.score >= 70 ? 'bg-emerald-100 text-emerald-800' : att.score >= 40 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
+                    att.subjectId === 'subj-uppet-paper-mock'
+                      ? att.score >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                      : att.score >= 70 ? 'bg-emerald-100 text-emerald-800' : att.score >= 40 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
                   }`}>
-                    {att.score}%
+                    {att.subjectId === 'subj-uppet-paper-mock'
+                      ? `${Number(att.score).toFixed(2).replace(/\.00$/, '')}/100`
+                      : `${att.score}%`}
                   </span>
                 </div>
               ))}

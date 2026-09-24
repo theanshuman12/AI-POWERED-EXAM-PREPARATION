@@ -83,7 +83,8 @@ export const AttemptHistoryPage: React.FC<AttemptHistoryPageProps> = ({ onStartQ
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="divide-y divide-slate-100">
             {attempts.map((att, idx) => {
-              const isPassing = att.score >= 50;
+              const isPaperMock = att.subjectId === 'subj-uppet-paper-mock';
+              const displayedMarks = Number(att.score).toFixed(2).replace(/\.00$/, '');
               return (
                 <div key={att.id} className="p-5 sm:p-6 hover:bg-slate-50/60 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1.5">
@@ -113,14 +114,18 @@ export const AttemptHistoryPage: React.FC<AttemptHistoryPageProps> = ({ onStartQ
 
                   <div className="flex items-center space-x-4 self-end sm:self-center">
                     <div className={`px-4 py-2 rounded-2xl border text-center font-mono ${
-                      att.score >= 70
+                      isPaperMock
+                        ? att.score >= 0
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-rose-50 text-rose-800 border-rose-200'
+                        : att.score >= 70
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                         : att.score >= 40
                         ? 'bg-amber-50 text-amber-800 border-amber-200'
                         : 'bg-rose-50 text-rose-800 border-rose-200'
                     }`}>
-                      <span className="text-xl font-extrabold">{att.score}%</span>
-                      <span className="block text-[9px] uppercase font-bold tracking-wider">Score</span>
+                      <span className="text-xl font-extrabold">{isPaperMock ? `${displayedMarks}/100` : `${att.score}%`}</span>
+                      <span className="block text-[9px] uppercase font-bold tracking-wider">{isPaperMock ? 'Marks' : 'Score'}</span>
                     </div>
 
                     <button
