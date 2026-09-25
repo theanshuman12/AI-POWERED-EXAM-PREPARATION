@@ -28,13 +28,14 @@ export const ConceptExplainerPage: React.FC<ConceptExplainerPageProps> = ({
 }) => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [selectedTopic, setSelectedTopic] = useState<string>(initialTopicName || 'Normalization');
-  const [selectedSubject, setSelectedSubject] = useState<string>(initialSubjectName || 'Database Management Systems (DBMS)');
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
+  const [selectedSubjectName, setSelectedSubjectName] = useState<string>(initialSubjectName || '');
+  const [selectedTopicId, setSelectedTopicId] = useState<string>('');
+  const [selectedTopic, setSelectedTopic] = useState<string>(initialTopicName || '');
   const [customQuery, setCustomQuery] = useState<string>('');
   const [explanation, setExplanation] = useState<string>('');
   const [source, setSource] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
-  const [initialized, setInitialized] = useState<boolean>(false);
 
   useEffect(() => {
     const loadCurriculum = async () => {
@@ -45,35 +46,71 @@ export const ConceptExplainerPage: React.FC<ConceptExplainerPageProps> = ({
         ]);
         setSubjects(s);
         setTopics(t);
+
+        const subjectToUse = s.find(sub => sub.name === initialSubjectName) || s[0];
+        if (subjectToUse) {
+          const subjectTopics = t.filter(topic => topic.subjectId === subjectToUse.id);
+          const firstTopic = subjectTopics[0];
+          setSelectedSubjectId(subjectToUse.id);
+          setSelectedSubjectName(subjectToUse.name);
+          setSelectedTopicId(firstTopic?.id || '');
+          setSelectedTopic(firstTopic?.name || initialTopicName || '');
+        }
       } catch (err) {
         console.error('Failed to load curriculum lists:', err);
       }
     };
     loadCurriculum();
-  }, []);
+  }, [initialSubjectName]);
 
-  const handleFetchExplanation = async (topicToExplain: string, subjectToExplain?: string) => {
+  useEffect(() => {
+    if (!selectedSubjectId || !topics.length) return;
+    const subjectTopics = topics.filter(topic => topic.subjectId === selectedSubjectId);
+    const existingTopic = subjectTopics.find(topic => topic.name === selectedTopic || topic.id === selectedTopicId);
+    const nextTopic = existingTopic || subjectTopics[0];
+    if (nextTopic && (nextTopic.id !== selectedTopicId || nextTopic.name !== selectedTopic)) {
+      setSelectedTopicId(nextTopic.id);
+      setSelectedTopic(nextTopic.name);
+    }
+  }, [selectedSubjectId, topics, selectedTopic, selectedTopicId]);
+
+  const handleFetchExplanation = async (topicToExplain: string, subjectToExplain?: string, subjectId?: string, topicId?: string) => {
     setLoading(true);
     try {
+      const resolvedTopic = topics.find(t => t.id === topicId) || topics.find(t => t.name === topicToExplain);
+      const resolvedSubject = subjects.find(s => s.id === subjectId) || subjects.find(s => s.name === subjectToExplain) || subjects.find(s => s.id === selectedSubjectId);
+      const topicName = resolvedTopic?.name || topicToExplain;
+      const subjectName = resolvedSubject?.name || subjectToExplain || selectedSubjectName;
       const res = await api.explainConcept({
-        topicName: topicToExplain,
-        subjectName: subjectToExplain || selectedSubject,
+        topicName: topicName,
+        subjectName: subjectName,
+        subjectId: resolvedSubject?.id || subjectId || selectedSubjectId,
+        topicId: resolvedTopic?.id || topicId || selectedTopicId,
         difficulty: 'Undergraduate Exam Level'
       });
       setExplanation(res.explanation);
       setSource(res.source);
-      setSelectedTopic(topicToExplain);
+      setSelectedTopic(topicName);
+      if (resolvedTopic) {
+        setSelectedTopicId(resolvedTopic.id);
+      }
+      if (resolvedSubject) {
+        setSelectedSubjectId(resolvedSubject.id);
+        setSelectedSubjectName(resolvedSubject.name);
+      }
     } catch (err: any) {
       setExplanation(`Failed to retrieve explanation: ${err.message}`);
     } finally {
       setLoading(false);
-      setInitialized(true);
     }
   };
 
   useEffect(() => {
-    handleFetchExplanation(selectedTopic, selectedSubject);
-  }, []);
+    if (!selectedSubjectId && !selectedSubjectName && !selectedTopic && !selectedTopicId) return;
+    if (selectedTopic) {
+      handleFetchExplanation(selectedTopic, selectedSubjectName, selectedSubjectId, selectedTopicId);
+    }
+  }, [selectedSubjectId, selectedTopicId, selectedTopic]);
 
   const handleCustomSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,35 +157,40 @@ export const ConceptExplainerPage: React.FC<ConceptExplainerPageProps> = ({
           </button>
         </form>
 
-        {/* Popular Recommended Topics Quick-Select */}
+        {/* Database-backed topic quick-select */}
         <div>
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
-            Curriculum High-Yield Topics:
+            {selectedSubjectName ? `${selectedSubjectName} Topics:` : 'Topics:'}
           </span>
           <div className="flex flex-wrap gap-2">
-            {[
-              'Normalization',
-              'SQL Joins & Subqueries',
-              'Transactions & ACID Properties',
-              'Indexing & B-Trees',
-              'Deadlock Detection',
-              'Paging and Virtual Memory',
-              'TCP 3-Way Handshake',
-              'Binary Search Trees'
-            ].map(tName => (
-              <button
-                key={tName}
-                type="button"
-                onClick={() => handleFetchExplanation(tName)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  selectedTopic === tName
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
-                }`}
-              >
-                {tName}
-              </button>
-            ))}
+            {topics
+              .filter(topic => !selectedSubjectId || topic.subjectId === selectedSubjectId)
+              .slice(0, 20)
+              .map(topic => (
+                <button
+                  key={topic.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedSubjectId(topic.subjectId);
+                    setSelectedTopicId(topic.id);
+                    setSelectedTopic(topic.name);
+                    handleFetchExplanation(topic.name, selectedSubjectName || subjects.find(s => s.id === topic.subjectId)?.name || '', topic.subjectId, topic.id);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    selectedTopicId === topic.id
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                  }`}
+                >
+                  {topic.name}
+                </button>
+              ))}
+            {!selectedSubjectId && (
+              <span className="text-[11px] text-slate-500">Select a subject to view its topics.</span>
+            )}
+            {selectedSubjectId && topics.filter(topic => topic.subjectId === selectedSubjectId).length === 0 && (
+              <span className="text-[11px] text-slate-500">No topics are available for this subject yet.</span>
+            )}
           </div>
         </div>
       </div>
@@ -165,7 +207,10 @@ export const ConceptExplainerPage: React.FC<ConceptExplainerPageProps> = ({
                 </span>
               )}
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-slate-900">{selectedTopic}</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900">{selectedTopic || 'Select a topic'}</h2>
+            {selectedSubjectName && (
+              <p className="text-[11px] text-slate-500 font-medium">Subject: {selectedSubjectName}</p>
+            )}
           </div>
 
           {onPracticeTopic && (
@@ -183,9 +228,13 @@ export const ConceptExplainerPage: React.FC<ConceptExplainerPageProps> = ({
           <div className="py-12">
             <LoadingSpinner message="Consulting academic knowledge base and generating pedagogical notes..." />
           </div>
+        ) : selectedSubjectId && topics.filter(topic => topic.subjectId === selectedSubjectId).length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
+            No topics are currently stored for {selectedSubjectName || 'this subject'} in the database. Add topics to the curriculum to enable the AI Study Assistant for this subject.
+          </div>
         ) : (
           <div className="markdown-body prose prose-slate max-w-none text-xs sm:text-sm leading-relaxed space-y-4">
-            <Markdown>{explanation}</Markdown>
+            <Markdown>{explanation || 'Select a topic to generate an AI study note.'}</Markdown>
           </div>
         )}
       </div>

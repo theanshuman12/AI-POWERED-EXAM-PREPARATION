@@ -31,8 +31,8 @@ function MainApp() {
   const [quizResultData, setQuizResultData] = useState<any>(null);
 
   // Concept explainer context
-  const [explainerTopic, setExplainerTopic] = useState<string>('Normalization');
-  const [explainerSubject, setExplainerSubject] = useState<string>('Database Management Systems (DBMS)');
+  const [explainerTopic, setExplainerTopic] = useState<string>('');
+  const [explainerSubject, setExplainerSubject] = useState<string>('');
 
   // Selected subject for curriculum navigation
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('subj-dbms');

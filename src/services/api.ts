@@ -349,7 +349,7 @@ class ApiClient {
   }
 
   // --- AI Explainer & Hints ---
-  explainConcept(params: { topicName: string; subjectName?: string; difficulty?: string; questionContext?: string }): Promise<{
+  explainConcept(params: { topicName: string; subjectName?: string; subjectId?: string; topicId?: string; difficulty?: string; questionContext?: string }): Promise<{
     topicName: string;
     explanation: string;
     source: string;

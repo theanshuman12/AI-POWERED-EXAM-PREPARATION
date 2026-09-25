@@ -26,6 +26,53 @@ export class AIService {
     }
   }
 
+  private static normalizeTopicPerformance(topic: any): any {
+    if (!topic) return topic;
+    const normalized = { ...topic };
+    if (!normalized.topicName && normalized.topic) {
+      normalized.topicName = normalized.topic;
+    }
+    if (!normalized.topic && normalized.topicName) {
+      normalized.topic = normalized.topicName;
+    }
+    if (!normalized.topicId && normalized.id) {
+      normalized.topicId = normalized.id;
+    }
+    if (!normalized.subjectName && normalized.subject) {
+      normalized.subjectName = normalized.subject;
+    }
+    return normalized;
+  }
+
+  private static normalizeAnalysisResult(result: Partial<PerformanceAnalysisResponse> & { [key: string]: any }, studentId: string, totalQuestionAttempts: number): PerformanceAnalysisResponse {
+    const weakTopics = Array.isArray(result.weakTopics) ? result.weakTopics.map(item => this.normalizeTopicPerformance(item)) : [];
+    const moderateTopics = Array.isArray(result.moderateTopics) ? result.moderateTopics.map(item => this.normalizeTopicPerformance(item)) : [];
+    const strongTopics = Array.isArray(result.strongTopics) ? result.strongTopics.map(item => this.normalizeTopicPerformance(item)) : [];
+    const recommendations = Array.isArray(result.recommendations) ? result.recommendations : [];
+    const totalTests = typeof result.totalTests === 'number' ? result.totalTests : db.getStudentAttempts(studentId).length;
+
+    return {
+      studentId,
+      overallAccuracy: typeof result.overallAccuracy === 'number' ? result.overallAccuracy : 0,
+      totalTests,
+      totalQuestionsAttempted: typeof result.totalQuestionsAttempted === 'number' ? result.totalQuestionsAttempted : totalQuestionAttempts,
+      averageResponseTime: typeof result.averageResponseTime === 'number' ? result.averageResponseTime : undefined,
+      weakTopics,
+      moderateTopics,
+      strongTopics,
+      recommendations
+    };
+  }
+
+  private static calculateAverageResponseTime(attempts: any[]): number {
+    const responseTimes = attempts
+      .map(attempt => Number(attempt.responseTime))
+      .filter(responseTime => Number.isFinite(responseTime) && responseTime >= 0);
+    return responseTimes.length > 0
+      ? Math.round((responseTimes.reduce((sum, responseTime) => sum + responseTime, 0) / responseTimes.length) * 10) / 10
+      : 0;
+  }
+
   /**
    * Invokes Python performance analyzer via CLI process or falls back to identical in-process logic
    */
@@ -34,23 +81,48 @@ export class AIService {
     const topics = db.getTopics();
     const subjects = db.getSubjects();
 
-    // Map attempts with enriched topic & subject metadata
-    const enrichedPerformance = rawAttempts.map(attempt => {
-      const topic = topics.find(t => t.id === attempt.topicId);
-      const subject = topic ? subjects.find(s => s.id === topic.subjectId) : null;
+    const normalizeTopicKey = (value?: string) => (value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+    const resolveTopicMetadata = (attempt: any) => {
+      const canonicalQuestion = attempt.questionId ? db.getQuestionById(attempt.questionId) : undefined;
+      const topicId = canonicalQuestion?.topicId || attempt.topicId || 'general';
+      const topicMatches = topics.filter(t => normalizeTopicKey(t.id) === normalizeTopicKey(topicId));
+      const relatedTopicMatches = topics
+        .filter(t => {
+          const candidateId = normalizeTopicKey(t.id);
+          const requestedId = normalizeTopicKey(topicId);
+          const candidateParts = candidateId.split('-');
+          const requestedParts = requestedId.split('-');
+          const sameTopicFamily = candidateParts.slice(0, 3).join('-') === requestedParts.slice(0, 3).join('-');
+          const candidateTopicParts = candidateParts.slice(3);
+          const requestedTopicParts = requestedParts.slice(3);
+          return sameTopicFamily && candidateTopicParts.every(part => requestedTopicParts.includes(part));
+        })
+        .sort((left, right) => right.id.length - left.id.length);
+      const exactTopic = topics.find(t => t.id === topicId) || topicMatches[0] || relatedTopicMatches[0];
+      const fallbackTopic = exactTopic || topics.find(t => normalizeTopicKey(t.name) === normalizeTopicKey(topicId));
+      const topicName = fallbackTopic?.name || attempt.topicName || attempt.topic || topicId;
+      const subjectId = canonicalQuestion?.subjectId || fallbackTopic?.subjectId || (attempt.subjectId || subjects.find(s => s.name === attempt.subjectName)?.id);
+      const subject = subjectId ? subjects.find(s => s.id === subjectId) : null;
+
       return {
+        topicId: exactTopic?.id || topicId,
+        topic: topicName,
+        topicName,
+        subjectId: subject?.id || subjectId || 'general',
+        subjectName: subject?.name || attempt.subjectName || 'Computer Science',
         questionId: attempt.questionId,
-        topicId: attempt.topicId,
-        topic: topic?.name || attempt.topicId,
-        topicName: topic?.name || attempt.topicId,
-        subjectName: subject?.name || 'Computer Science',
         selectedAnswer: attempt.selectedAnswer,
         correct: attempt.correct,
         responseTime: attempt.responseTime,
         difficulty: attempt.difficulty,
         createdAt: attempt.createdAt
       };
-    });
+    };
+
+    // Map attempts with enriched topic & subject metadata
+    const enrichedPerformance = rawAttempts.map(attempt => resolveTopicMetadata(attempt));
+    const averageResponseTime = this.calculateAverageResponseTime(enrichedPerformance);
 
     // Try calling the Python service via subprocess. Database failures must not be
     // treated as analyzer failures because a submission is only successful after persistence.
@@ -61,13 +133,17 @@ export class AIService {
       console.warn('Python AI analyzer unavailable; falling back to synchronized native calculation:', err instanceof Error ? err.message : err);
     }
 
-    if (pythonResult && (pythonResult as any).status !== 'error' && pythonResult.recommendations) {
-      await this.saveRecommendationsSafely(pythonResult.recommendations);
-      return pythonResult;
+    if (pythonResult && (pythonResult as any).status !== 'error' && Array.isArray((pythonResult as any).recommendations)) {
+      const normalized = this.normalizeAnalysisResult(pythonResult, studentId, rawAttempts.length);
+      normalized.averageResponseTime = averageResponseTime;
+      await this.saveRecommendationsSafely(normalized.recommendations);
+      return normalized;
     }
 
     // Fallback: Synchronized identical mathematical model
-    return this.calculateExplainableMetrics(studentId, enrichedPerformance);
+    const nativeAnalysis = await this.calculateExplainableMetrics(studentId, enrichedPerformance);
+    nativeAnalysis.averageResponseTime = averageResponseTime;
+    return nativeAnalysis;
   }
 
   private static runPythonAnalyzer(studentId: string, performance: any[]): Promise<PerformanceAnalysisResponse> {
@@ -149,11 +225,11 @@ export class AIService {
     // Group attempts by topic
     const topicGroups = new Map<string, any[]>();
     for (const a of attempts) {
-      const tid = a.topicId || 'general';
-      if (!topicGroups.has(tid)) {
-        topicGroups.set(tid, []);
+      const topicKey = `${a.subjectId || 'general'}:${a.topicId || 'general'}`;
+      if (!topicGroups.has(topicKey)) {
+        topicGroups.set(topicKey, []);
       }
-      topicGroups.get(tid)!.push(a);
+      topicGroups.get(topicKey)!.push(a);
     }
 
     const weakTopics: TopicPerformance[] = [];
@@ -161,7 +237,8 @@ export class AIService {
     const strongTopics: TopicPerformance[] = [];
     const recommendations: Recommendation[] = [];
 
-    topicGroups.forEach((groupAttempts, topicId) => {
+    topicGroups.forEach((groupAttempts) => {
+      const topicId = groupAttempts[0].topicId || 'general';
       const tCount = groupAttempts.length;
       const tCorrect = groupAttempts.filter(a => a.correct === true).length;
       const tOverallAcc = tCount > 0 ? tCorrect / tCount : 0;

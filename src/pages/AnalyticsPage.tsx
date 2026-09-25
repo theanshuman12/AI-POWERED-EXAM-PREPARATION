@@ -67,10 +67,11 @@ export const AnalyticsPage: React.FC = () => {
   ];
 
   const topicChartData = allTopics.map(t => {
+    const topicName = t.topicName || (t as any).topic || 'Unknown Topic';
     const acc = t.overallAccuracy !== undefined ? t.overallAccuracy : (t.accuracy || 0);
     return {
-      name: t.topicName.length > 14 ? t.topicName.substring(0, 12) + '...' : t.topicName,
-      fullName: t.topicName,
+      name: topicName.length > 14 ? topicName.substring(0, 12) + '...' : topicName,
+      fullName: topicName,
       accuracy: Math.round(acc * 100),
       level: t.level
     };

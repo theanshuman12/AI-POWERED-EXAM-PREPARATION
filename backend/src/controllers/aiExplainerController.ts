@@ -16,20 +16,22 @@ function getAIClient(): GoogleGenAI | null {
 }
 
 export const explainConcept = async (req: AuthenticatedRequest, res: Response) => {
-  const { topicName, subjectName, difficulty, questionContext } = req.body;
+  const { topicName, subjectName, topicId, subjectId, difficulty, questionContext } = req.body;
 
   if (!topicName) {
     res.status(400).json({ message: 'topicName is required.' });
     return;
   }
 
+  const canonicalSubjectName = subjectName || 'General';
   const client = getAIClient();
 
   // If Gemini API is configured, generate dynamic academic explanation
   if (client) {
     try {
-      const prompt = `You are a distinguished university Computer Science Professor and exam preparation mentor.
-Topic: ${topicName} (Subject: ${subjectName || 'Computer Science'}, Level: ${difficulty || 'Undergraduate'}).
+      const prompt = `You are a distinguished university academic mentor.
+Topic: ${topicName} (Subject: ${canonicalSubjectName}, Level: ${difficulty || 'Undergraduate'}).
+${topicId ? `Canonical topicId: ${topicId}.` : ''}${subjectId ? `Canonical subjectId: ${subjectId}.` : ''}
 ${questionContext ? `Student is reviewing this question: "${questionContext}"` : ''}
 
 Please provide:
@@ -62,7 +64,7 @@ Keep it crystal-clear, pedagogical, and exam-focused. Format in clean markdown.`
   const fallbackExplanation = `### Academic Concept Primer: ${topicName}
 
 #### 1. Core Intuition & Theory
-In ${subjectName || 'Computer Science'}, **${topicName}** represents a fundamental building block. Understanding its governing principles allows you to eliminate incorrect multiple-choice distractors quickly.
+In ${canonicalSubjectName}, **${topicName}** represents a fundamental building block. Understanding its governing principles allows you to eliminate incorrect multiple-choice distractors quickly.
 
 #### 2. Key Exam Principles
 - **Axiomatic Consistency**: Always verify boundary conditions and prerequisites before solving.

@@ -48,17 +48,20 @@ class PerformanceAnalyzer:
         if not question_attempts:
             return []
 
-        # Group attempts by topic
+        # Group attempts by subject and topic so similarly named topics cannot collide.
         grouped_topics: Dict[str, List[Dict[str, Any]]] = {}
         for attempt in question_attempts:
-            topic_key = attempt.get("topicId") or attempt.get("topic") or "General"
-            if topic_key not in grouped_topics:
-                grouped_topics[topic_key] = []
-            grouped_topics[topic_key].append(attempt)
+            topic_id = attempt.get("topicId") or attempt.get("topic") or "General"
+            subject_id = attempt.get("subjectId") or "General"
+            group_key = f"{subject_id}:{topic_id}"
+            if group_key not in grouped_topics:
+                grouped_topics[group_key] = []
+            grouped_topics[group_key].append(attempt)
 
         results = []
 
-        for topic_key, attempts in grouped_topics.items():
+        for _, attempts in grouped_topics.items():
+            topic_key = attempts[0].get("topicId") or attempts[0].get("topic") or "General"
             # Sort attempts by timestamp ascending (or preserve order)
             total_attempts = len(attempts)
             correct_attempts = sum(1 for a in attempts if a.get("correct") is True)
