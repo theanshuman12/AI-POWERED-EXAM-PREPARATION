@@ -64,8 +64,14 @@ export class AIService {
     };
   }
 
+  private static isUnansweredUppetAttempt(attempt: any): boolean {
+    return attempt.subjectId === 'subj-uppet-paper-mock'
+      && (attempt.selectedAnswer === undefined || attempt.selectedAnswer === null || attempt.selectedAnswer === -1);
+  }
+
   private static calculateAverageResponseTime(attempts: any[]): number {
     const responseTimes = attempts
+      .filter(attempt => !this.isUnansweredUppetAttempt(attempt))
       .map(attempt => Number(attempt.responseTime))
       .filter(responseTime => Number.isFinite(responseTime) && responseTime >= 0);
     return responseTimes.length > 0
@@ -238,18 +244,21 @@ export class AIService {
     const recommendations: Recommendation[] = [];
 
     topicGroups.forEach((groupAttempts) => {
-      const topicId = groupAttempts[0].topicId || 'general';
-      const tCount = groupAttempts.length;
-      const tCorrect = groupAttempts.filter(a => a.correct === true).length;
+      const topicAttempts = groupAttempts.filter(attempt => !this.isUnansweredUppetAttempt(attempt));
+      if (topicAttempts.length === 0) return;
+
+      const topicId = topicAttempts[0].topicId || 'general';
+      const tCount = topicAttempts.length;
+      const tCorrect = topicAttempts.filter(a => a.correct === true).length;
       const tOverallAcc = tCount > 0 ? tCorrect / tCount : 0;
 
       // Recent accuracy (last 5 attempts)
-      const recentSlice = tCount >= 5 ? groupAttempts.slice(-5) : groupAttempts;
+      const recentSlice = tCount >= 5 ? topicAttempts.slice(-5) : topicAttempts;
       const recentCorrect = recentSlice.filter(a => a.correct === true).length;
       const recentAcc = recentSlice.length > 0 ? recentCorrect / recentSlice.length : tOverallAcc;
 
       // Time Performance (optimal target ~35s)
-      const totalTime = groupAttempts.reduce((sum, a) => sum + (Number(a.responseTime) || 35), 0);
+      const totalTime = topicAttempts.reduce((sum, a) => sum + (Number(a.responseTime) || 35), 0);
       const avgTime = tCount > 0 ? totalTime / tCount : 35;
       const deviation = Math.abs(avgTime - 35);
       const timePerf = Math.max(0.2, Math.min(1.0, 1.0 - (deviation / 70.0)));
@@ -265,8 +274,8 @@ export class AIService {
       let reason = '';
       let tips: string[] = [];
 
-      const topicName = groupAttempts[0].topicName || groupAttempts[0].topic || topicId;
-      const subjectName = groupAttempts[0].subjectName || 'Computer Science';
+      const topicName = topicAttempts[0].topicName || topicAttempts[0].topic || topicId;
+      const subjectName = topicAttempts[0].subjectName || 'Computer Science';
 
       if (normalizedScore < 0.40) {
         level = 'Weak';

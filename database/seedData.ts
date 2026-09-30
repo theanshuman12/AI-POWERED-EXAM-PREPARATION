@@ -84,7 +84,7 @@ export const INITIAL_SUBJECTS: Subject[] = [
     id: 'subj-uppet-paper-mock',
     examId: 'exam-uppet',
     name: 'Paper Mock',
-    description: 'Ten full-length UPPET paper mocks with 100 questions each.',
+    description: 'Twenty full-length UPPET paper mocks with 100 questions each.',
     icon: 'FileCheck2',
     createdAt: new Date().toISOString()
   }
