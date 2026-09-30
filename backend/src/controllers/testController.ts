@@ -114,6 +114,7 @@ export const submitTestAttempt = async (req: AuthenticatedRequest, res: Response
       return;
     }
 
+    const isPaperMock = Boolean(testId && db.getTestById(testId)?.subjectId === 'subj-uppet-paper-mock');
     let correctAnswers = 0;
     let incorrectAnswers = 0;
     let unattempted = 0;
@@ -135,14 +136,16 @@ export const submitTestAttempt = async (req: AuthenticatedRequest, res: Response
         incorrectAnswers++;
       }
 
-      // Track topic breakdown
-      const topicObj = db.getTopicById(q.topicId);
-      const topicName = topicObj ? topicObj.name : q.topicId;
-      if (!topicBreakdown[q.topicId]) {
-        topicBreakdown[q.topicId] = { total: 0, correct: 0, name: topicName };
+      // UPPET topic accuracy excludes unanswered questions, while retaining every question attempt.
+      if (!isPaperMock || !isUnattempted) {
+        const topicObj = db.getTopicById(q.topicId);
+        const topicName = topicObj ? topicObj.name : q.topicId;
+        if (!topicBreakdown[q.topicId]) {
+          topicBreakdown[q.topicId] = { total: 0, correct: 0, name: topicName };
+        }
+        topicBreakdown[q.topicId].total++;
+        if (isCorrect) topicBreakdown[q.topicId].correct++;
       }
-      topicBreakdown[q.topicId].total++;
-      if (isCorrect) topicBreakdown[q.topicId].correct++;
 
       questionAttempts.push({
         id: 'qa-' + Math.random().toString(36).substring(2, 9),
@@ -158,7 +161,6 @@ export const submitTestAttempt = async (req: AuthenticatedRequest, res: Response
     }
 
     const totalQuestions = answers.length;
-    const isPaperMock = Boolean(testId && db.getTestById(testId)?.subjectId === 'subj-uppet-paper-mock');
     const positiveMarks = isPaperMock ? correctAnswers : undefined;
     const negativeMarks = isPaperMock ? Math.round(incorrectAnswers * 0.25 * 100) / 100 : undefined;
     const score = isPaperMock

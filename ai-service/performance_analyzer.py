@@ -40,6 +40,13 @@ class PerformanceAnalyzer:
         score = max(0.2, min(1.0, 1.0 - (deviation / 70.0)))
         return round(score, 3)
 
+    @staticmethod
+    def _is_unanswered_uppet_attempt(attempt: Dict[str, Any]) -> bool:
+        return (
+            attempt.get("subjectId") == "subj-uppet-paper-mock"
+            and attempt.get("selectedAnswer") in (None, -1)
+        )
+
     def analyze_student_performance(self, question_attempts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Takes raw question attempt records and groups by topic.
@@ -61,19 +68,23 @@ class PerformanceAnalyzer:
         results = []
 
         for _, attempts in grouped_topics.items():
-            topic_key = attempts[0].get("topicId") or attempts[0].get("topic") or "General"
+            topic_attempts = [a for a in attempts if not self._is_unanswered_uppet_attempt(a)]
+            if not topic_attempts:
+                continue
+
+            topic_key = topic_attempts[0].get("topicId") or topic_attempts[0].get("topic") or "General"
             # Sort attempts by timestamp ascending (or preserve order)
-            total_attempts = len(attempts)
-            correct_attempts = sum(1 for a in attempts if a.get("correct") is True)
+            total_attempts = len(topic_attempts)
+            correct_attempts = sum(1 for a in topic_attempts if a.get("correct") is True)
             overall_accuracy = correct_attempts / total_attempts if total_attempts > 0 else 0.0
 
             # Recent accuracy: consider last 5 attempts
-            recent_slice = attempts[-5:] if total_attempts >= 5 else attempts
+            recent_slice = topic_attempts[-5:] if total_attempts >= 5 else topic_attempts
             recent_correct = sum(1 for a in recent_slice if a.get("correct") is True)
             recent_accuracy = recent_correct / len(recent_slice) if recent_slice else overall_accuracy
 
             # Average response time
-            total_time = sum(float(a.get("responseTime", 30)) for a in attempts)
+            total_time = sum(float(a.get("responseTime", 30)) for a in topic_attempts)
             avg_response_time = total_time / total_attempts if total_attempts > 0 else 35.0
 
             time_performance = self.calculate_time_performance(avg_response_time)
@@ -92,8 +103,8 @@ class PerformanceAnalyzer:
             else:
                 level = "Strong"
 
-            topic_name = attempts[0].get("topicName") or attempts[0].get("topic") or topic_key
-            subject_name = attempts[0].get("subjectName") or "General CS"
+            topic_name = topic_attempts[0].get("topicName") or topic_attempts[0].get("topic") or topic_key
+            subject_name = topic_attempts[0].get("subjectName") or "General CS"
 
             results.append({
                 "topicId": topic_key,

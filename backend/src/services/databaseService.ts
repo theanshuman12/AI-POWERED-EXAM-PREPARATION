@@ -52,6 +52,17 @@ type StateCollection = keyof DatabaseSchema;
 type PersistedDocument = { id: string; [key: string]: unknown };
 type MongoStoredDocument = PersistedDocument & { _id: string };
 
+interface ImportedUppetQuestionRecord {
+  id: string;
+  subject: string;
+  topic: string;
+  difficulty: string;
+  question_text: string;
+  options: Record<string, string>;
+  correct_answer: string;
+  explanation: string;
+}
+
 class PersistenceDataError extends Error {
   constructor(message: string) {
     super(message);
@@ -342,13 +353,14 @@ class DatabaseService {
       });
     }
 
+    const importedPaperMockData = this.loadAdditionalPaperMockData();
     this.data = {
       users: seededUsers,
       exams: INITIAL_EXAMS,
       subjects: INITIAL_SUBJECTS,
-      topics: INITIAL_TOPICS,
-      questions: [...INITIAL_QUESTIONS, ...UPPET_REASONING_QUESTIONS, ...UPPET_GENERAL_STUDIES_QUESTIONS, ...UPPET_PAPER_MOCK_QUESTIONS],
-      tests: [...INITIAL_TESTS, ...UPPET_REASONING_TESTS, ...UPPET_GENERAL_STUDIES_TESTS, ...UPPET_PAPER_MOCK_TESTS],
+      topics: [...INITIAL_TOPICS, ...importedPaperMockData.topics],
+      questions: [...INITIAL_QUESTIONS, ...UPPET_REASONING_QUESTIONS, ...UPPET_GENERAL_STUDIES_QUESTIONS, ...UPPET_PAPER_MOCK_QUESTIONS, ...importedPaperMockData.questions],
+      tests: [...INITIAL_TESTS, ...UPPET_REASONING_TESTS, ...UPPET_GENERAL_STUDIES_TESTS, ...UPPET_PAPER_MOCK_TESTS, ...importedPaperMockData.tests],
       testAttempts: [],
       questionAttempts: [],
       recommendations: [],
@@ -357,6 +369,81 @@ class DatabaseService {
     };
 
     this.persist();
+  }
+
+  private loadAdditionalPaperMockData(): { questions: Question[]; topics: Topic[]; tests: Test[] } {
+    const bankPath = path.resolve(process.cwd(), 'UPPET_question_bank (2).txt');
+    if (!fs.existsSync(bankPath)) {
+      console.warn(`UPPET question bank not found at ${bankPath}; additional mocks 4-13 were not loaded.`);
+      return { questions: [], topics: [], tests: [] };
+    }
+
+    const source = fs.readFileSync(bankPath, 'utf-8')
+      .replace(/}\s*{/g, '},{')
+      .replace(/]\s*{/g, ',{')
+      .trim();
+    let records: ImportedUppetQuestionRecord[];
+    try {
+      records = JSON.parse(source.endsWith(']') ? source : `${source}]`);
+    } catch {
+      throw new Error(`Unable to parse the UPPET question bank at ${bankPath}.`);
+    }
+    if (!Array.isArray(records) || records.length !== 1000) {
+      throw new Error(`The UPPET question bank must contain exactly 1,000 questions; found ${records.length}.`);
+    }
+
+    const topicByLabel = new Map<string, Topic>();
+    const createdAt = new Date().toISOString();
+    const questions = records.map((record, index): Question => {
+      const optionEntries = Object.entries(record.options).sort(([left], [right]) => left.localeCompare(right));
+      const correctOption = record.correct_answer.match(/^Option\s+([A-D])$/i)?.[1].toUpperCase();
+      const correctAnswer = optionEntries.findIndex(([key]) => key.toUpperCase() === correctOption);
+      if (!record.question_text || optionEntries.length !== 4 || correctAnswer < 0) {
+        throw new Error(`Invalid question-bank record at position ${index + 1}.`);
+      }
+
+      const topicLabel = `${record.subject}::${record.topic}`;
+      let topic = topicByLabel.get(topicLabel);
+      if (!topic) {
+        topic = {
+          id: `top-uppet-additional-${topicByLabel.size + 1}`,
+          subjectId: 'subj-uppet-paper-mock',
+          name: `${record.subject}: ${record.topic}`,
+          description: `UPPET ${record.subject} questions about ${record.topic}.`
+        };
+        topicByLabel.set(topicLabel, topic);
+      }
+
+      return {
+        id: `q-uppet-additional-bank-${String(index + 1).padStart(4, '0')}`,
+        subjectId: 'subj-uppet-paper-mock',
+        topicId: topic.id,
+        question: record.question_text,
+        options: optionEntries.map(([, value]) => value),
+        correctAnswer,
+        explanation: record.explanation,
+        difficulty: record.difficulty as Question['difficulty'],
+        createdAt
+      };
+    });
+
+    const template = UPPET_PAPER_MOCK_TESTS.find(test => test.title === 'Additional Mock 1') ?? UPPET_PAPER_MOCK_TESTS[0];
+    const tests = Array.from({ length: 10 }, (_, index): Test => {
+      const mockQuestions = questions.slice(index * 100, (index + 1) * 100);
+      return {
+        id: `test-uppet-paper-mock-${index + 11}`,
+        title: `Additional Mock ${index + 4}`,
+        subjectId: 'subj-uppet-paper-mock',
+        topics: [...new Set(mockQuestions.map(question => question.topicId))],
+        questions: mockQuestions.map(question => question.id),
+        duration: template.duration,
+        difficulty: template.difficulty,
+        status: template.status,
+        createdAt
+      };
+    });
+
+    return { questions, topics: [...topicByLabel.values()], tests };
   }
 
   private migrateSchema() {
@@ -514,6 +601,25 @@ class DatabaseService {
       }
     }
     for (const test of UPPET_PAPER_MOCK_TESTS) {
+      if (!this.data.tests.some(existing => existing.id === test.id)) {
+        this.data.tests.push(test);
+        changed = true;
+      }
+    }
+    const importedPaperMockData = this.loadAdditionalPaperMockData();
+    for (const topic of importedPaperMockData.topics) {
+      if (!this.data.topics.some(existing => existing.id === topic.id)) {
+        this.data.topics.push(topic);
+        changed = true;
+      }
+    }
+    for (const question of importedPaperMockData.questions) {
+      if (!this.data.questions.some(existing => existing.id === question.id)) {
+        this.data.questions.push(question);
+        changed = true;
+      }
+    }
+    for (const test of importedPaperMockData.tests) {
       if (!this.data.tests.some(existing => existing.id === test.id)) {
         this.data.tests.push(test);
         changed = true;
